@@ -70,10 +70,22 @@ function parseTemplateFrameworks(stdout) {
 
 /**
  * Detects a target framework that both the installed SDK and the webapi template support.
+ * If a specific requested version is provided (e.g. "10", "9", "8" or "net10.0"), normalizes and returns it.
  * Prefers the latest stable SDK major when the template lists that TFM.
+ * @param {string} [requested]
  * @returns {string}
  */
-export function detectTargetFramework() {
+export function detectTargetFramework(requested) {
+  if (requested) {
+    const raw = String(requested).trim().toLowerCase();
+    const match = raw.match(/^net?(\d+)(\.0)?$/) || raw.match(/^(\d+)$/);
+    if (match) {
+      const major = match[1];
+      return `net${major}.0`;
+    }
+    return raw.startsWith('net') ? raw : `net${raw}.0`;
+  }
+
   const sdkVersion = getLatestStableSdkVersion();
   const sdkMajor = Number.parseInt(sdkVersion.split('.')[0] ?? '', 10);
 

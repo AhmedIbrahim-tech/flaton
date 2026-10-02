@@ -168,7 +168,7 @@ function planNotificationsBackend(ns) {
       contents: renderNotificationServiceAbstraction(ns),
     },
     {
-      relativePath: paths.infrastructure('Notifications', 'NotificationService.cs'),
+      relativePath: paths.infrastructure('Notifications', 'Services', 'NotificationService.cs'),
       contents: renderNotificationServiceImplementation(ns),
     },
   );
@@ -333,7 +333,7 @@ function renderNotificationServiceImplementation(ns) {
 using ${ns}.Application.Abstractions.Persistence;
 using ${ns}.Domain.Entities;
 
-namespace ${ns}.Infrastructure.Notifications;
+namespace ${ns}.Infrastructure.Notifications.Services;
 
 public sealed class NotificationService : INotificationService
 {

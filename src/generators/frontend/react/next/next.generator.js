@@ -47,7 +47,7 @@ export async function generateNextFrontend(options) {
   });
 
   const clientDir = await promoteStagingClient(options.targetDirectory, frontendDir, options.folderName);
-  logger.success('Next.js client created');
+  logger.success('Frontend created');
 
   installReactCommonPackages({ clientDir, packageManager: options.packageManager, frontend });
 

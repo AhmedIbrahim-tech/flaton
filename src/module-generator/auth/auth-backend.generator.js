@@ -76,8 +76,8 @@ export function planAuthBackend(config) {
   const architecture = config?.manifest?.backend?.architecture ?? config?.architecture ?? 'cqrs-mediatr';
   const presentation = config?.manifest?.backend?.presentation ?? config?.presentation ?? 'controllers';
   const authMode = config?.manifest?.backend?.authentication ?? config?.authMode ?? 'identity-jwt';
-  const isCookieAuth = authMode === 'identity-cookie' || authMode === 'identity';
-  const isJwt = authMode === 'identity-jwt';
+  const isCookieAuth = authMode === 'identity-cookies' || authMode === 'identity-cookie' || authMode === 'identity' || authMode === 'cookies';
+  const isJwt = !isCookieAuth;
 
   assertBackendCompatibility({
     orm,
@@ -119,36 +119,64 @@ export function planAuthBackend(config) {
   const api = (...segments) => paths.api(...segments);
   const web = (...segments) => paths.web(...segments);
 
+  const isWebProject = presentation === 'mvc' || presentation === 'razor-pages';
+  const presentationTarget = isWebProject ? web : api;
+
   // --- Infrastructure/Identity -------------------------------------------
   files.push(
-    { relativePath: infraIdentity('ApplicationUser.cs'), contents: renderApplicationUser(ctx) },
-    { relativePath: infraIdentity('ApplicationRole.cs'), contents: renderApplicationRole(ctx) },
-    { relativePath: infraIdentity('IdentityService.cs'), contents: renderIdentityService(ctx) },
-    { relativePath: infraIdentity('CurrentUserService.cs'), contents: renderCurrentUserService(ctx) },
+    { relativePath: infraIdentity('Entities', 'ApplicationUser.cs'), contents: renderApplicationUser(ctx) },
+    { relativePath: infraIdentity('Entities', 'ApplicationRole.cs'), contents: renderApplicationRole(ctx) },
+    { relativePath: infraIdentity('Services', 'IdentityService.cs'), contents: renderIdentityService(ctx) },
   );
 
   // --- Infrastructure/Authentication -------------------------------------
   if (isJwt) {
     files.push(
-      { relativePath: infraAuth('JwtOptions.cs'), contents: renderJwtOptions(ctx), writeMode: 'replace' },
-      { relativePath: infraAuth('RefreshTokenCookieOptions.cs'), contents: renderRefreshTokenCookieOptions(ctx) },
-      { relativePath: infraAuth('IJwtTokenService.cs'), contents: renderIJwtTokenService(ctx) },
-      { relativePath: infraAuth('JwtTokenService.cs'), contents: renderJwtTokenService(ctx) },
-      { relativePath: infraAuth('IRefreshTokenService.cs'), contents: renderIRefreshTokenService(ctx) },
-      { relativePath: infraAuth('RefreshTokenService.cs'), contents: renderRefreshTokenService(ctx) },
-      { relativePath: infraAuth('RefreshTokenCookieManager.cs'), contents: renderRefreshTokenCookieManager(ctx) },
-      { relativePath: infraAuth('AuthCookieService.cs'), contents: renderAuthCookieService(ctx) },
+      { relativePath: infraAuth('Options', 'JwtOptions.cs'), contents: renderJwtOptions(ctx), writeMode: 'replace' },
+      { relativePath: infraAuth('Services', 'IJwtTokenService.cs'), contents: renderIJwtTokenService(ctx) },
+      { relativePath: infraAuth('Services', 'JwtTokenService.cs'), contents: renderJwtTokenService(ctx) },
+      { relativePath: infraAuth('Services', 'IRefreshTokenService.cs'), contents: renderIRefreshTokenService(ctx) },
+      { relativePath: infraAuth('Services', 'RefreshTokenService.cs'), contents: renderRefreshTokenService(ctx) },
+    );
+  }
+
+  // --- Presentation Layer (Services, Authentication & Authorization) ----
+  files.push(
+    { relativePath: presentationTarget('Services', 'CurrentUserService.cs'), contents: renderCurrentUserService(ctx) },
+    { relativePath: presentationTarget('Authorization', 'PermissionRequirement.cs'), contents: renderPermissionRequirement(ctx) },
+    { relativePath: presentationTarget('Authorization', 'PermissionAuthorizationHandler.cs'), contents: renderPermissionAuthorizationHandler(ctx) },
+    { relativePath: presentationTarget('Authorization', 'PermissionPolicyProvider.cs'), contents: renderPermissionPolicyProvider(ctx) },
+    { relativePath: presentationTarget('Attributes', 'HasPermissionAttribute.cs'), contents: renderHasPermissionAttribute(ctx) },
+  );
+
+  if (isJwt) {
+    files.push(
+      { relativePath: presentationTarget('Authentication', 'Options', 'RefreshTokenCookieOptions.cs'), contents: renderRefreshTokenCookieOptions(ctx) },
+      { relativePath: presentationTarget('Authentication', 'Services', 'RefreshTokenCookieManager.cs'), contents: renderRefreshTokenCookieManager(ctx) },
+      { relativePath: presentationTarget('Authentication', 'Services', 'AuthCookieService.cs'), contents: renderAuthCookieService(ctx) },
     );
   }
 
   files.push(
     {
-      relativePath: paths.infrastructure('Services', 'DevelopmentEmailSender.cs'),
+      relativePath: paths.infrastructure('Email', 'Services', 'DevelopmentEmailSender.cs'),
       contents: renderDevelopmentEmailSender(ctx),
     },
     {
-      relativePath: paths.infrastructure('Seeders', 'AuthDataSeeder.cs'),
-      contents: renderAuthDataSeeder(ctx),
+      relativePath: paths.infrastructure('Seeders', 'DatabaseSeeder.cs'),
+      contents: renderDatabaseSeeder(ctx),
+    },
+    {
+      relativePath: paths.infrastructure('Seeders', 'Identity', 'RoleSeeder.cs'),
+      contents: renderRoleSeeder(ctx),
+    },
+    {
+      relativePath: paths.infrastructure('Seeders', 'Identity', 'PermissionSeeder.cs'),
+      contents: renderPermissionSeeder(ctx),
+    },
+    {
+      relativePath: paths.infrastructure('Seeders', 'Identity', 'AdminUserSeeder.cs'),
+      contents: renderAdminUserSeeder(ctx),
     },
     {
       relativePath: paths.infrastructure('DependencyInjection', 'AuthenticationServiceExtensions.cs'),
@@ -170,9 +198,9 @@ export function planAuthBackend(config) {
 
   // --- Application/Abstractions (shared → ifMissing) ----------------------
   files.push(
-    { relativePath: appAbstractions('ICurrentUser.cs'), contents: renderICurrentUser(ctx), writeMode: 'ifMissing' },
-    { relativePath: appAbstractions('IEmailSender.cs'), contents: renderIEmailSender(ctx), writeMode: 'ifMissing' },
-    { relativePath: appAbstractions('Authentication', 'IIdentityService.cs'), contents: renderIIdentityService(ctx) },
+    { relativePath: appAbstractions('Identity', 'ICurrentUser.cs'), contents: renderICurrentUser(ctx), writeMode: 'ifMissing' },
+    { relativePath: appAbstractions('Email', 'IEmailSender.cs'), contents: renderIEmailSender(ctx), writeMode: 'ifMissing' },
+    { relativePath: appAbstractions('Identity', 'IIdentityService.cs'), contents: renderIIdentityService(ctx) },
   );
 
   if (isJwt) {
@@ -186,10 +214,6 @@ export function planAuthBackend(config) {
   files.push(
     { relativePath: appAuthz('AppRoles.cs'), contents: renderAppRoles(ctx) },
     { relativePath: appAuthz('AppPermissions.cs'), contents: renderAppPermissions(ctx) },
-    { relativePath: appAuthz('PermissionRequirement.cs'), contents: renderPermissionRequirement(ctx) },
-    { relativePath: appAuthz('PermissionAuthorizationHandler.cs'), contents: renderPermissionAuthorizationHandler(ctx) },
-    { relativePath: appAuthz('PermissionPolicyProvider.cs'), contents: renderPermissionPolicyProvider(ctx) },
-    { relativePath: appAuthz('HasPermissionAttribute.cs'), contents: renderHasPermissionAttribute(ctx) },
   );
 
   // --- Application Layer (Architecture Dependent) -----------------------
@@ -264,7 +288,7 @@ export function planAuthRegistryUpdates(config) {
   const presentation = config?.manifest?.backend?.presentation ?? config?.presentation ?? 'controllers';
   const isWeb = presentation === 'mvc' || presentation === 'razor-pages';
   const authMode = config?.manifest?.backend?.authentication ?? config?.authMode ?? 'identity-jwt';
-  const isJwt = authMode === 'identity-jwt';
+  const isJwt = !(authMode === 'identity-cookies' || authMode === 'identity-cookie' || authMode === 'identity' || authMode === 'cookies');
   const updates = [];
 
   if (!isWeb) {
@@ -456,7 +480,7 @@ function adminRoleConst(ctx) {
 function renderApplicationUser({ ns }) {
   return `using Microsoft.AspNetCore.Identity;
 
-namespace ${ns}.Infrastructure.Identity;
+namespace ${ns}.Infrastructure.Identity.Entities;
 
 public sealed class ApplicationUser : IdentityUser<Guid>
 {
@@ -469,7 +493,7 @@ public sealed class ApplicationUser : IdentityUser<Guid>
 function renderApplicationRole({ ns }) {
   return `using Microsoft.AspNetCore.Identity;
 
-namespace ${ns}.Infrastructure.Identity;
+namespace ${ns}.Infrastructure.Identity.Entities;
 
 public sealed class ApplicationRole : IdentityRole<Guid>
 {
@@ -487,7 +511,7 @@ public sealed class ApplicationRole : IdentityRole<Guid>
 
 /** @param {{ ns: string }} ctx */
 function renderJwtOptions({ ns }) {
-  return `namespace ${ns}.Infrastructure.Authentication;
+  return `namespace ${ns}.Infrastructure.Authentication.Options;
 
 public sealed class JwtOptions
 {
@@ -504,9 +528,11 @@ public sealed class JwtOptions
 `;
 }
 
-/** @param {{ ns: string }} ctx */
-function renderRefreshTokenCookieOptions({ ns }) {
-  return `namespace ${ns}.Infrastructure.Authentication;
+/** @param {{ ns: string, presentation?: string }} ctx */
+function renderRefreshTokenCookieOptions({ ns, presentation }) {
+  const isWeb = presentation === 'mvc' || presentation === 'razor-pages';
+  const folder = isWeb ? 'Web' : 'API';
+  return `namespace ${ns}.${folder}.Authentication.Options;
 
 public sealed class RefreshTokenCookieOptions
 {
@@ -529,7 +555,7 @@ public sealed class RefreshTokenCookieOptions
 
 /** @param {{ ns: string }} ctx */
 function renderIJwtTokenService({ ns }) {
-  return `namespace ${ns}.Infrastructure.Authentication;
+  return `namespace ${ns}.Infrastructure.Authentication.Services;
 
 public interface IJwtTokenService
 {
@@ -552,8 +578,9 @@ using System.Text;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using ${ns}.Application.Common.Authorization;
+using ${ns}.Infrastructure.Authentication.Options;
 
-namespace ${ns}.Infrastructure.Authentication;
+namespace ${ns}.Infrastructure.Authentication.Services;
 
 public sealed class JwtTokenService : IJwtTokenService
 {
@@ -611,7 +638,7 @@ public sealed class JwtTokenService : IJwtTokenService
 
 /** @param {{ ns: string }} ctx */
 function renderIRefreshTokenService({ ns }) {
-  return `namespace ${ns}.Infrastructure.Authentication;
+  return `namespace ${ns}.Infrastructure.Authentication.Services;
 
 public interface IRefreshTokenService
 {
@@ -661,23 +688,19 @@ function renderRefreshTokenService({ ns }) {
   return `using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using ${ns}.Infrastructure.Persistence;
 using ${ns}.Infrastructure.Persistence.Entities;
 
-namespace ${ns}.Infrastructure.Authentication;
+namespace ${ns}.Infrastructure.Authentication.Services;
 
 public sealed class RefreshTokenService : IRefreshTokenService
 {
+    private const int TokenLifetimeDays = 7;
     private readonly ApplicationDbContext _dbContext;
-    private readonly RefreshTokenCookieOptions _options;
 
-    public RefreshTokenService(
-        ApplicationDbContext dbContext,
-        IOptions<RefreshTokenCookieOptions> options)
+    public RefreshTokenService(ApplicationDbContext dbContext)
     {
         _dbContext = dbContext;
-        _options = options.Value;
     }
 
     public async Task<RefreshTokenIssueResult> IssueAsync(
@@ -810,8 +833,6 @@ public sealed class RefreshTokenService : IRefreshTokenService
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    private int TokenLifetimeDays => _options.Days <= 0 ? 7 : _options.Days;
-
     private static (string RawToken, string TokenHash) GenerateToken()
     {
         var bytes = RandomNumberGenerator.GetBytes(64);
@@ -828,12 +849,15 @@ public sealed class RefreshTokenService : IRefreshTokenService
 `;
 }
 
-/** @param {{ ns: string }} ctx */
-function renderRefreshTokenCookieManager({ ns }) {
+/** @param {{ ns: string, presentation?: string }} ctx */
+function renderRefreshTokenCookieManager({ ns, presentation }) {
+  const isWeb = presentation === 'mvc' || presentation === 'razor-pages';
+  const folder = isWeb ? 'Web' : 'API';
   return `using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
+using ${ns}.${folder}.Authentication.Options;
 
-namespace ${ns}.Infrastructure.Authentication;
+namespace ${ns}.${folder}.Authentication.Services;
 
 public interface IRefreshTokenCookieManager
 {
@@ -895,12 +919,14 @@ public sealed class RefreshTokenCookieManager : IRefreshTokenCookieManager
 `;
 }
 
-/** @param {{ ns: string }} ctx */
-function renderAuthCookieService({ ns }) {
+/** @param {{ ns: string, presentation?: string }} ctx */
+function renderAuthCookieService({ ns, presentation }) {
+  const isWeb = presentation === 'mvc' || presentation === 'razor-pages';
+  const folder = isWeb ? 'Web' : 'API';
   return `using Microsoft.AspNetCore.Http;
 using ${ns}.Application.Abstractions.Authentication;
 
-namespace ${ns}.Infrastructure.Authentication;
+namespace ${ns}.${folder}.Authentication.Services;
 
 public sealed class AuthCookieService : IAuthCookieService
 {
@@ -942,14 +968,16 @@ public sealed class AuthCookieService : IAuthCookieService
 `;
 }
 
-/** @param {{ ns: string }} ctx */
-function renderCurrentUserService({ ns }) {
+/** @param {{ ns: string, presentation?: string }} ctx */
+function renderCurrentUserService({ ns, presentation }) {
+  const isWeb = presentation === 'mvc' || presentation === 'razor-pages';
+  const folder = isWeb ? 'Web' : 'API';
   return `using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
-using ${ns}.Application.Abstractions;
+using ${ns}.Application.Abstractions.Identity;
 using ${ns}.Application.Common.Authorization;
 
-namespace ${ns}.Infrastructure.Identity;
+namespace ${ns}.${folder}.Services;
 
 public sealed class CurrentUserService : ICurrentUser
 {
@@ -997,12 +1025,13 @@ function renderIdentityService(ctx) {
   if (!isJwt) {
     return `using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
-using ${ns}.Application.Abstractions.Authentication;
+using ${ns}.Application.Abstractions.Identity;
 using ${ns}.Application.Common.Authorization;
 using ${ns}.Application.Common.Results;
 using ${dtoNs};
+using ${ns}.Infrastructure.Identity.Entities;
 
-namespace ${ns}.Infrastructure.Identity;
+namespace ${ns}.Infrastructure.Identity.Services;
 
 public sealed class IdentityService : IIdentityService
 {
@@ -1149,12 +1178,14 @@ public sealed class IdentityService : IIdentityService
   return `using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using ${ns}.Application.Abstractions.Authentication;
+using ${ns}.Application.Abstractions.Identity;
 using ${ns}.Application.Common.Authorization;
 using ${ns}.Application.Common.Results;
 using ${dtoNs};
-using ${ns}.Infrastructure.Authentication;
+using ${ns}.Infrastructure.Authentication.Services;
+using ${ns}.Infrastructure.Identity.Entities;
 
-namespace ${ns}.Infrastructure.Identity;
+namespace ${ns}.Infrastructure.Identity.Services;
 
 public sealed class IdentityService : IIdentityService
 {
@@ -1344,9 +1375,9 @@ public sealed class IdentityService : IIdentityService
 /** @param {{ ns: string }} ctx */
 function renderDevelopmentEmailSender({ ns }) {
   return `using Microsoft.Extensions.Logging;
-using ${ns}.Application.Abstractions;
+using ${ns}.Application.Abstractions.Email;
 
-namespace ${ns}.Infrastructure.Services;
+namespace ${ns}.Infrastructure.Email.Services;
 
 /// <summary>
 /// A no-op email sender for local development. It deliberately never logs
@@ -1377,51 +1408,81 @@ public sealed class DevelopmentEmailSender : IEmailSender
 `;
 }
 
-/** @param {{ ns: string, roles: string[], defaultRole: string }} ctx */
-function renderAuthDataSeeder(ctx) {
-  const { ns } = ctx;
-  const adminConst = adminRoleConst(ctx);
-  return `using System.Security.Claims;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
-using ${ns}.Application.Common.Authorization;
-using ${ns}.Infrastructure.Identity;
+/** @param {{ ns: string }} ctx */
+function renderDatabaseSeeder({ ns }) {
+  return `using Microsoft.Extensions.Logging;
+using ${ns}.Infrastructure.Seeders.Identity;
 
 namespace ${ns}.Infrastructure.Seeders;
 
-/// <summary>
-/// Idempotently seeds roles (and their permission claims) plus an optional
-/// administrator account. The admin account is only created when
-/// "Auth:SeedAdmin:Enabled" is true and credentials are supplied via
-/// configuration — no production password is ever hardcoded.
-/// </summary>
-public sealed class AuthDataSeeder
+public sealed class DatabaseSeeder
 {
-    private readonly RoleManager<ApplicationRole> _roleManager;
-    private readonly UserManager<ApplicationUser> _userManager;
-    private readonly IConfiguration _configuration;
-    private readonly ILogger<AuthDataSeeder> _logger;
+    private readonly RoleSeeder? _roleSeeder;
+    private readonly PermissionSeeder? _permissionSeeder;
+    private readonly AdminUserSeeder? _adminUserSeeder;
+    private readonly ILogger<DatabaseSeeder> _logger;
 
-    public AuthDataSeeder(
-        RoleManager<ApplicationRole> roleManager,
-        UserManager<ApplicationUser> userManager,
-        IConfiguration configuration,
-        ILogger<AuthDataSeeder> logger)
+    public DatabaseSeeder(
+        ILogger<DatabaseSeeder> logger,
+        RoleSeeder? roleSeeder = null,
+        PermissionSeeder? permissionSeeder = null,
+        AdminUserSeeder? adminUserSeeder = null)
     {
-        _roleManager = roleManager;
-        _userManager = userManager;
-        _configuration = configuration;
         _logger = logger;
+        _roleSeeder = roleSeeder;
+        _permissionSeeder = permissionSeeder;
+        _adminUserSeeder = adminUserSeeder;
     }
 
     public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
-        await SeedRolesAsync();
-        await SeedAdminAsync();
+        _logger.LogInformation("Starting database seeding...");
+
+        if (_roleSeeder is not null)
+        {
+            await _roleSeeder.SeedAsync(cancellationToken);
+        }
+
+        if (_permissionSeeder is not null)
+        {
+            await _permissionSeeder.SeedAsync(cancellationToken);
+        }
+
+        if (_adminUserSeeder is not null)
+        {
+            await _adminUserSeeder.SeedAsync(cancellationToken);
+        }
+
+        _logger.LogInformation("Database seeding completed.");
+    }
+}
+`;
+}
+
+/** @param {{ ns: string, roles: string[], defaultRole: string }} ctx */
+function renderRoleSeeder(ctx) {
+  const { ns } = ctx;
+  return `using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Logging;
+using ${ns}.Application.Common.Authorization;
+using ${ns}.Infrastructure.Identity.Entities;
+
+namespace ${ns}.Infrastructure.Seeders.Identity;
+
+public sealed class RoleSeeder
+{
+    private readonly RoleManager<ApplicationRole> _roleManager;
+    private readonly ILogger<RoleSeeder> _logger;
+
+    public RoleSeeder(
+        RoleManager<ApplicationRole> roleManager,
+        ILogger<RoleSeeder> logger)
+    {
+        _roleManager = roleManager;
+        _logger = logger;
     }
 
-    private async Task SeedRolesAsync()
+    public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
         foreach (var roleName in AppRoles.All)
         {
@@ -1435,20 +1496,99 @@ public sealed class AuthDataSeeder
             if (!result.Succeeded)
             {
                 _logger.LogError("Failed to create role {Role}.", roleName);
-                continue;
             }
-
-            if (string.Equals(roleName, AppRoles.${adminConst}, StringComparison.Ordinal))
+            else
             {
-                foreach (var permission in AppPermissions.All)
-                {
-                    await _roleManager.AddClaimAsync(role, new Claim(AppPermissions.ClaimType, permission));
-                }
+                _logger.LogInformation("Seeded role {Role}.", roleName);
             }
         }
     }
+}
+`;
+}
 
-    private async Task SeedAdminAsync()
+/** @param {{ ns: string, roles: string[], defaultRole: string }} ctx */
+function renderPermissionSeeder(ctx) {
+  const { ns } = ctx;
+  const adminConst = adminRoleConst(ctx);
+  return `using System.Security.Claims;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Logging;
+using ${ns}.Application.Common.Authorization;
+using ${ns}.Infrastructure.Identity.Entities;
+
+namespace ${ns}.Infrastructure.Seeders.Identity;
+
+public sealed class PermissionSeeder
+{
+    private readonly RoleManager<ApplicationRole> _roleManager;
+    private readonly ILogger<PermissionSeeder> _logger;
+
+    public PermissionSeeder(
+        RoleManager<ApplicationRole> roleManager,
+        ILogger<PermissionSeeder> logger)
+    {
+        _roleManager = roleManager;
+        _logger = logger;
+    }
+
+    public async Task SeedAsync(CancellationToken cancellationToken = default)
+    {
+        var adminRole = await _roleManager.FindByNameAsync(AppRoles.${adminConst});
+        if (adminRole is null)
+        {
+            _logger.LogWarning("Admin role {Role} not found for permission seeding.", AppRoles.${adminConst});
+            return;
+        }
+
+        var existingClaims = await _roleManager.GetClaimsAsync(adminRole);
+        var existingPermissions = existingClaims
+            .Where(claim => claim.Type == AppPermissions.ClaimType)
+            .Select(claim => claim.Value)
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var permission in AppPermissions.All)
+        {
+            if (!existingPermissions.Contains(permission))
+            {
+                await _roleManager.AddClaimAsync(adminRole, new Claim(AppPermissions.ClaimType, permission));
+                _logger.LogInformation("Granted permission {Permission} to role {Role}.", permission, AppRoles.${adminConst});
+            }
+        }
+    }
+}
+`;
+}
+
+/** @param {{ ns: string, roles: string[], defaultRole: string }} ctx */
+function renderAdminUserSeeder(ctx) {
+  const { ns } = ctx;
+  const adminConst = adminRoleConst(ctx);
+  return `using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using ${ns}.Application.Common.Authorization;
+using ${ns}.Infrastructure.Identity.Entities;
+
+namespace ${ns}.Infrastructure.Seeders.Identity;
+
+public sealed class AdminUserSeeder
+{
+    private readonly UserManager<ApplicationUser> _userManager;
+    private readonly IConfiguration _configuration;
+    private readonly ILogger<AdminUserSeeder> _logger;
+
+    public AdminUserSeeder(
+        UserManager<ApplicationUser> userManager,
+        IConfiguration configuration,
+        ILogger<AdminUserSeeder> logger)
+    {
+        _userManager = userManager;
+        _configuration = configuration;
+        _logger = logger;
+    }
+
+    public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
         var enabled = _configuration.GetValue<bool>("Auth:SeedAdmin:Enabled");
         if (!enabled)
@@ -1484,7 +1624,7 @@ public sealed class AuthDataSeeder
         var result = await _userManager.CreateAsync(admin, password);
         if (!result.Succeeded)
         {
-            _logger.LogError("Failed to seed administrator account.");
+            _logger.LogError("Failed to seed administrator account: {Errors}", string.Join(", ", result.Errors.Select(e => e.Description)));
             return;
         }
 
@@ -1503,21 +1643,22 @@ function renderAuthDependencyInjection(ctx) {
   if (isCookieAuth) {
     return `using System.Security.Claims;
 using System.Threading.RateLimiting;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using ${ns}.Application.Abstractions;
-using ${ns}.Application.Abstractions.Authentication;
+using ${ns}.Application.Abstractions.Email;
+using ${ns}.Application.Abstractions.Identity;
 using ${ns}.Application.Common.Authorization;
 ${isServices ? `using ${ns}.Application.Modules.Authentication.Interfaces;\nusing ${ns}.Application.Modules.Authentication.Services;` : ''}
-using ${ns}.Infrastructure.Identity;
+using ${ns}.Infrastructure.Email.Services;
+using ${ns}.Infrastructure.Identity.Entities;
+using ${ns}.Infrastructure.Identity.Services;
 using ${ns}.Infrastructure.Persistence;
 using ${ns}.Infrastructure.Seeders;
-using ${ns}.Infrastructure.Services;
+using ${ns}.Infrastructure.Seeders.Identity;
 
 namespace ${ns}.Infrastructure.DependencyInjection;
 
@@ -1571,10 +1712,6 @@ public static class AuthenticationServiceExtensions
             };
         });
 
-        services.AddAuthorization();
-        services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
-        services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
-
         services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -1587,9 +1724,11 @@ public static class AuthenticationServiceExtensions
         });
 
         services.AddScoped<IIdentityService, IdentityService>();
-        services.AddScoped<ICurrentUser, CurrentUserService>();
         services.AddScoped<IEmailSender, DevelopmentEmailSender>();
-        services.AddScoped<AuthDataSeeder>();
+        services.AddScoped<RoleSeeder>();
+        services.AddScoped<PermissionSeeder>();
+        services.AddScoped<AdminUserSeeder>();
+        services.AddScoped<DatabaseSeeder>();
 ${isServices ? `        services.AddScoped<IAuthService, AuthService>();` : ''}
 
         return services;
@@ -1603,7 +1742,6 @@ using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -1611,15 +1749,19 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
-using ${ns}.Application.Abstractions;
 using ${ns}.Application.Abstractions.Authentication;
+using ${ns}.Application.Abstractions.Email;
+using ${ns}.Application.Abstractions.Identity;
 using ${ns}.Application.Common.Authorization;
 ${isServices ? `using ${ns}.Application.Modules.Authentication.Interfaces;\nusing ${ns}.Application.Modules.Authentication.Services;` : ''}
-using ${ns}.Infrastructure.Authentication;
-using ${ns}.Infrastructure.Identity;
+using ${ns}.Infrastructure.Authentication.Options;
+using ${ns}.Infrastructure.Authentication.Services;
+using ${ns}.Infrastructure.Email.Services;
+using ${ns}.Infrastructure.Identity.Entities;
+using ${ns}.Infrastructure.Identity.Services;
 using ${ns}.Infrastructure.Persistence;
 using ${ns}.Infrastructure.Seeders;
-using ${ns}.Infrastructure.Services;
+using ${ns}.Infrastructure.Seeders.Identity;
 
 namespace ${ns}.Infrastructure.DependencyInjection;
 
@@ -1632,8 +1774,6 @@ public static class AuthenticationServiceExtensions
         services.AddHttpContextAccessor();
 
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
-        services.Configure<RefreshTokenCookieOptions>(
-            configuration.GetSection(RefreshTokenCookieOptions.SectionName));
 
         services
             .AddIdentityCore<ApplicationUser>(options =>
@@ -1679,10 +1819,6 @@ public static class AuthenticationServiceExtensions
                 };
             });
 
-        services.AddAuthorization();
-        services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
-        services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
-
         services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -1696,12 +1832,12 @@ public static class AuthenticationServiceExtensions
 
         services.AddScoped<IJwtTokenService, JwtTokenService>();
         services.AddScoped<IRefreshTokenService, RefreshTokenService>();
-        services.AddScoped<IRefreshTokenCookieManager, RefreshTokenCookieManager>();
-        services.AddScoped<IAuthCookieService, AuthCookieService>();
         services.AddScoped<IIdentityService, IdentityService>();
-        services.AddScoped<ICurrentUser, CurrentUserService>();
         services.AddScoped<IEmailSender, DevelopmentEmailSender>();
-        services.AddScoped<AuthDataSeeder>();
+        services.AddScoped<RoleSeeder>();
+        services.AddScoped<PermissionSeeder>();
+        services.AddScoped<AdminUserSeeder>();
+        services.AddScoped<DatabaseSeeder>();
 ${isServices ? `        services.AddScoped<IAuthService, AuthService>();` : ''}
 
         return services;
@@ -1709,6 +1845,7 @@ ${isServices ? `        services.AddScoped<IAuthService, AuthService>();` : ''}
 }
 `;
 }
+
 
 /** @param {{ ns: string }} ctx */
 function renderAuthApplicationBuilderExtensions({ ns }) {
@@ -1738,7 +1875,7 @@ public static class AuthApplicationBuilderExtensions
         CancellationToken cancellationToken = default)
     {
         using var scope = services.CreateScope();
-        var seeder = scope.ServiceProvider.GetRequiredService<AuthDataSeeder>();
+        var seeder = scope.ServiceProvider.GetRequiredService<DatabaseSeeder>();
         await seeder.SeedAsync(cancellationToken);
     }
 }
@@ -1822,7 +1959,7 @@ public sealed class RefreshTokenConfiguration : IEntityTypeConfiguration<Refresh
 
 /** @param {{ ns: string }} ctx */
 function renderICurrentUser({ ns }) {
-  return `namespace ${ns}.Application.Abstractions;
+  return `namespace ${ns}.Application.Abstractions.Identity;
 
 public interface ICurrentUser
 {
@@ -1841,7 +1978,7 @@ public interface ICurrentUser
 
 /** @param {{ ns: string }} ctx */
 function renderIEmailSender({ ns }) {
-  return `namespace ${ns}.Application.Abstractions;
+  return `namespace ${ns}.Application.Abstractions.Email;
 
 public interface IEmailSender
 {
@@ -1859,10 +1996,10 @@ function renderIIdentityService(ctx) {
   const { ns, isJwt, architecture } = ctx;
   const dtoNs = `${ns}.Application.${architecture === 'services' ? 'Modules' : 'Features'}.Authentication.DTOs`;
 
-  return `using ${ns}.Application.Common.Results;
+  return `${isJwt ? `using ${ns}.Application.Abstractions.Authentication;\n` : ''}using ${ns}.Application.Common.Results;
 using ${dtoNs};
 
-namespace ${ns}.Application.Abstractions.Authentication;
+namespace ${ns}.Application.Abstractions.Identity;
 
 public interface IIdentityService
 {
@@ -2003,14 +2140,32 @@ public static class AppPermissions
         Audit.View,
     };
 }
+
+public static class PermissionConstants
+{
+    public const string UsersView = "Users.View";
+    public const string UsersManage = "Users.Manage";
+    public const string NotificationsSend = "Notifications.Send";
+    public const string AuditView = "Audit.View";
+
+    public static readonly IReadOnlyList<string> All = new[]
+    {
+        UsersView,
+        UsersManage,
+        NotificationsSend,
+        AuditView,
+    };
+}
 `;
 }
 
-/** @param {{ ns: string }} ctx */
-function renderPermissionRequirement({ ns }) {
+/** @param {{ ns: string, presentation: string }} ctx */
+function renderPermissionRequirement({ ns, presentation }) {
+  const isWeb = presentation === 'mvc' || presentation === 'razor-pages';
+  const targetNs = isWeb ? `${ns}.Web.Authorization` : `${ns}.API.Authorization`;
   return `using Microsoft.AspNetCore.Authorization;
 
-namespace ${ns}.Application.Common.Authorization;
+namespace ${targetNs};
 
 public sealed class PermissionRequirement : IAuthorizationRequirement
 {
@@ -2024,11 +2179,14 @@ public sealed class PermissionRequirement : IAuthorizationRequirement
 `;
 }
 
-/** @param {{ ns: string }} ctx */
-function renderPermissionAuthorizationHandler({ ns }) {
+/** @param {{ ns: string, presentation: string }} ctx */
+function renderPermissionAuthorizationHandler({ ns, presentation }) {
+  const isWeb = presentation === 'mvc' || presentation === 'razor-pages';
+  const targetNs = isWeb ? `${ns}.Web.Authorization` : `${ns}.API.Authorization`;
   return `using Microsoft.AspNetCore.Authorization;
+using ${ns}.Application.Common.Authorization;
 
-namespace ${ns}.Application.Common.Authorization;
+namespace ${targetNs};
 
 public sealed class PermissionAuthorizationHandler : AuthorizationHandler<PermissionRequirement>
 {
@@ -2051,12 +2209,14 @@ public sealed class PermissionAuthorizationHandler : AuthorizationHandler<Permis
 `;
 }
 
-/** @param {{ ns: string }} ctx */
-function renderPermissionPolicyProvider({ ns }) {
+/** @param {{ ns: string, presentation: string }} ctx */
+function renderPermissionPolicyProvider({ ns, presentation }) {
+  const isWeb = presentation === 'mvc' || presentation === 'razor-pages';
+  const targetNs = isWeb ? `${ns}.Web.Authorization` : `${ns}.API.Authorization`;
   return `using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
 
-namespace ${ns}.Application.Common.Authorization;
+namespace ${targetNs};
 
 /// <summary>
 /// Dynamically materializes an authorization policy for any policy name that
@@ -2098,11 +2258,15 @@ public sealed class PermissionPolicyProvider : IAuthorizationPolicyProvider
 `;
 }
 
-/** @param {{ ns: string }} ctx */
-function renderHasPermissionAttribute({ ns }) {
+/** @param {{ ns: string, presentation: string }} ctx */
+function renderHasPermissionAttribute({ ns, presentation }) {
+  const isWeb = presentation === 'mvc' || presentation === 'razor-pages';
+  const targetNs = isWeb ? `${ns}.Web.Attributes` : `${ns}.API.Attributes`;
+  const authzNs = isWeb ? `${ns}.Web.Authorization` : `${ns}.API.Authorization`;
   return `using Microsoft.AspNetCore.Authorization;
+using ${authzNs};
 
-namespace ${ns}.Application.Common.Authorization;
+namespace ${targetNs};
 
 /// <summary>
 /// Requires the caller to hold the given permission, e.g.
@@ -2185,7 +2349,7 @@ function renderRegisterHandler(ctx) {
   const { ns } = ctx;
   const defaultConst = toRoleConst(ctx.defaultRole);
   return `using MediatR;
-using ${ns}.Application.Abstractions.Authentication;
+using ${ns}.Application.Abstractions.Identity;
 using ${ns}.Application.Common.Authorization;
 using ${ns}.Application.Common.Results;
 
@@ -2282,7 +2446,7 @@ public sealed record LoginCommand : IRequest<Result<AuthResponseDto>>
 function renderLoginHandler({ ns, isJwt }) {
   if (!isJwt) {
     return `using MediatR;
-using ${ns}.Application.Abstractions.Authentication;
+using ${ns}.Application.Abstractions.Identity;
 using ${ns}.Application.Common.Results;
 using ${ns}.Application.Features.Authentication.DTOs;
 
@@ -2313,6 +2477,7 @@ public sealed class LoginCommandHandler : IRequestHandler<LoginCommand, Result<U
 
   return `using MediatR;
 using ${ns}.Application.Abstractions.Authentication;
+using ${ns}.Application.Abstractions.Identity;
 using ${ns}.Application.Common.Results;
 using ${ns}.Application.Features.Authentication.DTOs;
 
@@ -2396,6 +2561,7 @@ public sealed record RefreshTokenCommand : IRequest<Result<AuthResponseDto>>;
 function renderRefreshHandler({ ns }) {
   return `using MediatR;
 using ${ns}.Application.Abstractions.Authentication;
+using ${ns}.Application.Abstractions.Identity;
 using ${ns}.Application.Common.Results;
 using ${ns}.Application.Features.Authentication.DTOs;
 
@@ -2459,7 +2625,7 @@ public sealed record LogoutCommand : IRequest<Result>;
 function renderLogoutHandler({ ns, isJwt }) {
   if (!isJwt) {
     return `using MediatR;
-using ${ns}.Application.Abstractions.Authentication;
+using ${ns}.Application.Abstractions.Identity;
 using ${ns}.Application.Common.Results;
 
 namespace ${ns}.Application.Features.Authentication.Commands.Logout;
@@ -2484,6 +2650,7 @@ public sealed class LogoutCommandHandler : IRequestHandler<LogoutCommand, Result
 
   return `using MediatR;
 using ${ns}.Application.Abstractions.Authentication;
+using ${ns}.Application.Abstractions.Identity;
 using ${ns}.Application.Common.Results;
 
 namespace ${ns}.Application.Features.Authentication.Commands.Logout;
@@ -2531,8 +2698,7 @@ public sealed record GetMeQuery : IRequest<Result<UserInfoDto>>;
 function renderGetMeHandler({ ns, architecture }) {
   const layer = architecture === 'services' ? 'Modules' : 'Features';
   return `using MediatR;
-using ${ns}.Application.Abstractions;
-using ${ns}.Application.Abstractions.Authentication;
+using ${ns}.Application.Abstractions.Identity;
 using ${ns}.Application.Common.Results;
 using ${ns}.Application.${layer}.Authentication.DTOs;
 
@@ -2676,8 +2842,7 @@ function renderAuthService(ctx) {
   const { ns, isJwt, defaultRole } = ctx;
   const defaultConst = toRoleConst(defaultRole);
 
-  return `using ${ns}.Application.Abstractions;
-using ${ns}.Application.Abstractions.Authentication;
+  return `${isJwt ? `using ${ns}.Application.Abstractions.Authentication;\n` : ''}using ${ns}.Application.Abstractions.Identity;
 using ${ns}.Application.Common.Authorization;
 using ${ns}.Application.Common.Results;
 using ${ns}.Application.Modules.Authentication.DTOs;
@@ -3120,7 +3285,7 @@ public sealed class AccountController : Controller
 
         if (result.IsFailure)
         {
-            ModelState.AddModelError(string.Empty, result.Error.Description ?? "Invalid login attempt.");
+            ModelState.AddModelError(string.Empty, result.Error.Message ?? "Invalid login attempt.");
             return View(model);
         }
 
@@ -3155,7 +3320,7 @@ public sealed class AccountController : Controller
 
         if (result.IsFailure)
         {
-            ModelState.AddModelError(string.Empty, result.Error.Description ?? "Registration failed.");
+            ModelState.AddModelError(string.Empty, result.Error.Message ?? "Registration failed.");
             return View(model);
         }
 
@@ -3216,7 +3381,7 @@ public sealed class AccountController : Controller
 
         if (result.IsFailure)
         {
-            ModelState.AddModelError(string.Empty, result.Error.Description ?? "Invalid login attempt.");
+            ModelState.AddModelError(string.Empty, result.Error.Message ?? "Invalid login attempt.");
             return View(model);
         }
 
@@ -3251,7 +3416,7 @@ public sealed class AccountController : Controller
 
         if (result.IsFailure)
         {
-            ModelState.AddModelError(string.Empty, result.Error.Description ?? "Registration failed.");
+            ModelState.AddModelError(string.Empty, result.Error.Message ?? "Registration failed.");
             return View(model);
         }
 
@@ -3485,7 +3650,7 @@ public sealed class LoginModel : PageModel
 
         if (result.IsFailure)
         {
-            ModelState.AddModelError(string.Empty, result.Error.Description ?? "Invalid login attempt.");
+            ModelState.AddModelError(string.Empty, result.Error.Message ?? "Invalid login attempt.");
             return Page();
         }
 
@@ -3554,7 +3719,7 @@ public sealed class LoginModel : PageModel
 
         if (result.IsFailure)
         {
-            ModelState.AddModelError(string.Empty, result.Error.Description ?? "Invalid login attempt.");
+            ModelState.AddModelError(string.Empty, result.Error.Message ?? "Invalid login attempt.");
             return Page();
         }
 
@@ -3667,7 +3832,7 @@ public sealed class RegisterModel : PageModel
 
         if (result.IsFailure)
         {
-            ModelState.AddModelError(string.Empty, result.Error.Description ?? "Registration failed.");
+            ModelState.AddModelError(string.Empty, result.Error.Message ?? "Registration failed.");
             return Page();
         }
 
@@ -3730,7 +3895,7 @@ public sealed class RegisterModel : PageModel
 
         if (result.IsFailure)
         {
-            ModelState.AddModelError(string.Empty, result.Error.Description ?? "Registration failed.");
+            ModelState.AddModelError(string.Empty, result.Error.Message ?? "Registration failed.");
             return Page();
         }
 

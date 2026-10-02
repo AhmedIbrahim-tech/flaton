@@ -333,7 +333,7 @@ async function applyRegistryUpdates(projectRoot, plan) {
  */
 async function applyAuthOrchestration(projectRoot, projectName, frontendStrategy, manifest) {
   await patchIdentityDbContext(projectRoot, projectName, manifest);
-  await patchProgramCs(projectRoot, manifest);
+  await patchProgramCs(projectRoot, projectName, manifest);
   await mergeAuthAppsettings(projectRoot, frontendStrategy, manifest);
   await ensureAuthPackages(projectRoot, manifest);
   await ensureCorsAllowCredentials(projectRoot, frontendStrategy, manifest);
@@ -362,10 +362,10 @@ async function patchIdentityDbContext(projectRoot, projectName, manifest) {
     return;
   }
 
-  if (!contents.includes(`using ${projectName}.Infrastructure.Identity;`)) {
+  if (!contents.includes(`using ${projectName}.Infrastructure.Identity.Entities;`)) {
     contents = contents.replace(
       /(using .+;\r?\n)(?!using)/,
-      `$1using ${projectName}.Infrastructure.Identity;\nusing Microsoft.AspNetCore.Identity.EntityFrameworkCore;\n`,
+      `$1using ${projectName}.Infrastructure.Identity.Entities;\nusing Microsoft.AspNetCore.Identity.EntityFrameworkCore;\n`,
     );
   } else if (!contents.includes('Microsoft.AspNetCore.Identity.EntityFrameworkCore')) {
     contents = `using Microsoft.AspNetCore.Identity.EntityFrameworkCore;\n${contents}`;
@@ -384,7 +384,7 @@ async function patchIdentityDbContext(projectRoot, projectName, manifest) {
  * @param {string} projectRoot
  * @param {object} [manifest]
  */
-async function patchProgramCs(projectRoot, manifest) {
+async function patchProgramCs(projectRoot, projectName, manifest) {
   const backendDir = getBackendDirectory(projectRoot, manifest) ?? projectRoot;
   const presentation = manifest?.backend?.presentation ?? 'controllers';
   const isWeb = presentation === 'mvc' || presentation === 'razor-pages';
@@ -396,8 +396,8 @@ async function patchProgramCs(projectRoot, manifest) {
   const existing = await fs.readFile(programPath, 'utf8');
   const result = patchProgramForAuth(existing);
   if (presentation === 'minimal-api') {
-    const projectName = manifest?.displayName ?? manifest?.name ?? 'App';
-    const authEndpointsUsing = `using ${projectName}.API.Endpoints.Authentication;`;
+    const resolvedProjectName = projectName ?? manifest?.projectName ?? manifest?.displayName ?? manifest?.name ?? 'App';
+    const authEndpointsUsing = `using ${resolvedProjectName}.API.Endpoints.Authentication;`;
     if (!result.contents.includes(authEndpointsUsing)) {
       result.contents = `${authEndpointsUsing}\n${result.contents}`;
       result.changed = true;
@@ -510,10 +510,6 @@ async function ensureAuthPackages(projectRoot, manifest) {
           },
         ]
       : []),
-    {
-      project: appCsproj,
-      packages: ['Microsoft.AspNetCore.Authorization'],
-    },
   ];
 
   for (const entry of packages) {

@@ -616,8 +616,9 @@ export const useAppStore = create((set) => ({
 }));
 `
       : `import { create } from "zustand";
+import type { Category } from "@/modules/category/types/category.types";
 
-type CategoryItem = { id: string; name: string; description: string; createdAtUtc?: string };
+type CategoryItem = Category;
 
 type AppState = {
   category: {
@@ -690,7 +691,7 @@ export function useCategoriesController() {
     setCategoryStatus("loading");
     void categoryService
       .search(query)
-      .then((result) => setCategoryItems(result.items ?? result.data ?? []))
+      .then((result) => setCategoryItems(result.data ?? []))
       .catch((err) => setCategoryError(err instanceof Error ? err.message : "Unable to load categories"));
   }, [setCategoryError, setCategoryItems, setCategoryStatus]);
 
@@ -734,8 +735,8 @@ import { useCallback, useState } from "react";
 import { categoryService } from "../services/category.service";
 
 export function useCategoriesController() {
-  const [items, setItems] = useState${profile.language === 'javascript' ? '' : '<{ id: string; name: string; description: string; createdAtUtc?: string }[]>'}([]);
-  const [selected, setSelected] = useState${profile.language === 'javascript' ? '' : '<{ id: string; name: string; description: string; createdAtUtc?: string } | null>'}(null);
+  const [items, setItems] = useState${profile.language === 'javascript' ? '' : '<{ id: string; name: string; description: string; createdAtUtc: string }[]>'}([]);
+  const [selected, setSelected] = useState${profile.language === 'javascript' ? '' : '<{ id: string; name: string; description: string; createdAtUtc: string } | null>'}(null);
   const [status, setStatus] = useState${profile.language === 'javascript' ? '' : '<"idle" | "loading" | "succeeded" | "failed">'}("idle");
   const [error, setError] = useState${profile.language === 'javascript' ? '' : '<string | null>'}(null);
 
@@ -744,7 +745,7 @@ export function useCategoriesController() {
     void categoryService
       .search(query)
       .then((result) => {
-        setItems(result.items ?? result.data ?? []);
+        setItems(result.data ?? []);
         setStatus("succeeded");
       })
       .catch((err) => {

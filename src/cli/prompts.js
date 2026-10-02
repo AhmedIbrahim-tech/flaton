@@ -6,6 +6,31 @@ import { GenerationError } from '../utils/errors.js';
 import { defaultFrontendSelection, resolveFrontendSelection } from '../models/frontend.js';
 import { defaultBackendSelection, assertBackendCompatibility } from '../models/backend.js';
 import { loadUserPreferences, saveUserPreferences } from '../utils/user-preferences.js';
+import { validateCompatibility } from './validate-options.js';
+import { normalizeBackendOptions, normalizeFrontendOptions } from './normalize-options.js';
+
+/**
+ * Checks if the user supplied explicit configuration flags on the CLI.
+ * @param {Record<string, unknown>} parsed
+ */
+function hasExplicitConfig(parsed) {
+  const flags = parsed._explicitFlags;
+  if (!flags || !(flags instanceof Set)) return false;
+  for (const flag of flags) {
+    if (
+      flag !== '--output' &&
+      flag !== '--save-defaults' &&
+      flag !== '--package-manager' &&
+      flag !== '-p' &&
+      flag !== '-o' &&
+      flag !== '--verbose'
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 
 /**
  * @param {Record<string, unknown>} parsed
@@ -14,11 +39,22 @@ export async function resolveOptions(parsed) {
   const projectNameResult = await resolveProjectName(parsed);
   const names = projectNameResult.names;
 
+  // Pre-validate any explicitly supplied CLI flag combinations
+  const preCheckBackend = normalizeBackendOptions(parsed, parsed.mode ?? 'fullstack');
+  const preCheckFrontend = normalizeFrontendOptions(parsed);
+  validateCompatibility({
+    mode: parsed.mode ?? (parsed.backend === false ? 'frontend-only' : parsed.frontendEnabled === false ? 'backend-only' : 'fullstack'),
+    backend: { ...preCheckBackend, enabled: parsed.backend !== false },
+    frontend: { ...preCheckFrontend, enabled: parsed.frontendEnabled !== false },
+  });
+
   // Check for saved developer preferences
   const savedPreferences = loadUserPreferences();
   let preferencesAction = 'fresh';
 
-  if (!parsed.yes && savedPreferences && parsed.useSavedPreferences === undefined && !parsed.mode) {
+  const hasFlags = hasExplicitConfig(parsed);
+
+  if (!parsed.yes && !hasFlags && savedPreferences && parsed.useSavedPreferences === undefined && !parsed.mode) {
     preferencesAction = await select({
       message: 'Found saved developer preferences:',
       choices: [
@@ -31,19 +67,18 @@ export async function resolveOptions(parsed) {
     preferencesAction = 'use-saved';
   }
 
-  // 1. What do you want to create?
+  // 1. Project Mode
   const mode = await resolveCreationMode(parsed, preferencesAction, savedPreferences);
   const backendEnabled = mode === 'fullstack' || mode === 'backend-only';
   const frontendEnabled = mode === 'fullstack' || mode === 'frontend-only';
 
   // 2. Setup Mode: Recommended Defaults vs Customize
-  const setupMode = await resolveSetupMode(parsed, preferencesAction, savedPreferences);
+  const setupMode = await resolveSetupMode(parsed, preferencesAction, savedPreferences, hasFlags);
 
   let backend = null;
   let frontend = { enabled: false, library: null, framework: null };
 
-  if (setupMode === 'recommended' && preferencesAction !== 'use-saved') {
-    // Determine target frontend library/framework for recommended summary
+  if (setupMode === 'recommended' && preferencesAction !== 'use-saved' && !hasFlags) {
     let targetFrontend = defaultFrontendSelection('next');
     if (frontendEnabled) {
       const frontendLib = await resolveFrontendLibrary(parsed);
@@ -77,7 +112,7 @@ export async function resolveOptions(parsed) {
       backend = backendEnabled ? defaultBackendSelection() : null;
       frontend = frontendEnabled ? targetFrontend : { enabled: false };
     }
-  } else if (preferencesAction === 'use-saved' && savedPreferences) {
+  } else if (preferencesAction === 'use-saved' && savedPreferences && !hasFlags) {
     const savedPresentation = mode === 'fullstack' ? 'controllers' : (savedPreferences.backend?.presentation ?? 'controllers');
     backend = backendEnabled
       ? { ...defaultBackendSelection(), ...(savedPreferences.backend ?? {}), presentation: savedPresentation }
@@ -86,7 +121,7 @@ export async function resolveOptions(parsed) {
       ? { ...defaultFrontendSelection(), ...(savedPreferences.frontend ?? {}) }
       : { enabled: false };
   } else {
-    // Customization Mode
+    // Customization / Hybrid / Flag-driven Mode
     backend = backendEnabled ? await resolveCustomBackend(parsed, mode, savedPreferences) : null;
     frontend = frontendEnabled ? await resolveCustomFrontend(parsed) : { enabled: false };
   }
@@ -98,14 +133,14 @@ export async function resolveOptions(parsed) {
 
   // V4 module options compatibility
   const modules = {
-    auth: Boolean(backend?.authentication && backend.authentication !== 'none'),
-    users: Boolean(backend?.authentication && backend.authentication !== 'none'),
-    permissions: Boolean(backend?.authentication && backend.authentication !== 'none'),
-    audit: false,
-    notifications: Boolean(backend?.realtime === 'signalr'),
-    localization: Boolean(frontend.localization),
-    richText: false,
-    dashboard: Boolean(frontend.enabled),
+    auth: Boolean(parsed.authFlag ?? (backend?.authentication && backend.authentication !== 'none')),
+    users: Boolean(parsed.users),
+    permissions: Boolean(parsed.permissions),
+    audit: Boolean(parsed.audit),
+    notifications: Boolean(parsed.notifications),
+    localization: Boolean(parsed.localization ?? frontend.localization),
+    richText: Boolean(parsed.richText),
+    dashboard: Boolean(parsed.dashboard ?? frontend.enabled),
     defaultRole: 'User',
     roles: ['Admin', 'Editor', 'User'],
   };
@@ -128,7 +163,15 @@ export async function resolveOptions(parsed) {
     defaultRole: 'User',
     roles: ['Admin', 'Editor', 'User'],
     saveDefaults: parsed.saveDefaults,
+    verbose: Boolean(parsed.verbose),
   };
+
+  // Final compatibility validation
+  validateCompatibility({
+    mode,
+    backend: options.backend,
+    frontend: options.frontend,
+  });
 
   if (options.backend?.enabled) {
     assertBackendCompatibility(options.backend);
@@ -186,10 +229,14 @@ async function resolveCreationMode(parsed, preferencesAction, savedPreferences) 
  * @param {Record<string, unknown>} parsed
  * @param {string} preferencesAction
  * @param {object | null} savedPreferences
+ * @param {boolean} [hasFlags]
  */
-async function resolveSetupMode(parsed, preferencesAction, savedPreferences) {
+async function resolveSetupMode(parsed, preferencesAction, savedPreferences, hasFlags = false) {
   if (parsed.setupMode) {
     return parsed.setupMode;
+  }
+  if (hasFlags) {
+    return 'customize';
   }
   if (parsed.yes) {
     return DEFAULT_OPTIONS.setupMode;
@@ -214,8 +261,8 @@ async function resolveSetupMode(parsed, preferencesAction, savedPreferences) {
  * @param {Record<string, unknown>} parsed
  */
 async function resolveFrontendLibrary(parsed) {
-  if (parsed.frontendLibrary) {
-    return parsed.frontendLibrary;
+  if (parsed.frontend || parsed.frontendLibrary) {
+    return parsed.frontend ?? parsed.frontendLibrary;
   }
   if (parsed.yes) {
     return DEFAULT_OPTIONS.frontendLibrary;
@@ -234,8 +281,8 @@ async function resolveFrontendLibrary(parsed) {
  * @param {Record<string, unknown>} parsed
  */
 async function resolveReactFramework(parsed) {
-  if (parsed.reactFramework) {
-    return parsed.reactFramework;
+  if (parsed.frontendTooling || parsed.reactFramework) {
+    return parsed.frontendTooling ?? parsed.reactFramework;
   }
   if (parsed.yes) {
     return DEFAULT_OPTIONS.reactFramework;
@@ -256,26 +303,35 @@ async function resolveReactFramework(parsed) {
  * @param {object | null} [savedPreferences]
  */
 async function resolveCustomBackend(parsed, mode = 'backend-only', savedPreferences = null) {
+  const norm = normalizeBackendOptions(parsed, mode);
+
   if (parsed.yes) {
+    const presentation = mode === 'fullstack'
+      ? 'controllers'
+      : (norm.presentation ?? DEFAULT_OPTIONS.presentation);
+
+    const defaultAuth = (presentation === 'mvc' || presentation === 'razor-pages')
+      ? 'identity'
+      : (norm.orm === 'dapper' ? 'none' : DEFAULT_OPTIONS.authMode);
+
     return {
       enabled: true,
-      presentation: mode === 'fullstack'
-        ? 'controllers'
-        : (parsed.presentation ?? DEFAULT_OPTIONS.presentation),
-      architecture: parsed.architecture ?? DEFAULT_OPTIONS.architecture,
-      mapping: parsed.mapping ?? DEFAULT_OPTIONS.mapping,
-      orm: parsed.orm ?? DEFAULT_OPTIONS.orm,
-      database: parsed.database ?? (parsed.sqlServer === false ? 'sqlite' : DEFAULT_OPTIONS.database),
-      logging: parsed.logging ?? DEFAULT_OPTIONS.logging,
-      backgroundJobs: parsed.backgroundJobs ?? DEFAULT_OPTIONS.backgroundJobs,
-      realtime: parsed.realtime ?? DEFAULT_OPTIONS.realtime,
-      authentication: parsed.authMode ?? (parsed.auth === false ? 'none' : DEFAULT_OPTIONS.authMode),
+      presentation,
+      architecture: norm.architecture ?? DEFAULT_OPTIONS.architecture,
+      mapping: norm.mapping ?? DEFAULT_OPTIONS.mapping,
+      orm: norm.orm ?? DEFAULT_OPTIONS.orm,
+      database: norm.database ?? DEFAULT_OPTIONS.database,
+      logging: norm.logging ?? DEFAULT_OPTIONS.logging,
+      backgroundJobs: norm.backgroundJobs ?? DEFAULT_OPTIONS.backgroundJobs,
+      realtime: norm.realtime ?? DEFAULT_OPTIONS.realtime,
+      authentication: norm.authentication ?? defaultAuth,
+      dotnet: norm.dotnet,
     };
   }
 
   const presentation = mode === 'fullstack'
     ? 'controllers'
-    : (parsed.presentation ?? (await select({
+    : (norm.presentation ?? (await select({
         message: 'Backend Type:',
         choices: [
           { name: 'Web API (Controllers)', value: 'controllers' },
@@ -286,7 +342,7 @@ async function resolveCustomBackend(parsed, mode = 'backend-only', savedPreferen
         default: savedPreferences?.backend?.presentation ?? 'controllers',
       })));
 
-  const architecture = parsed.architecture ?? (await select({
+  const architecture = norm.architecture ?? (await select({
     message: 'Application Architecture:',
     choices: [
       { name: 'CQRS + MediatR', value: 'cqrs-mediatr' },
@@ -294,7 +350,7 @@ async function resolveCustomBackend(parsed, mode = 'backend-only', savedPreferen
     ],
   }));
 
-  const mapping = parsed.mapping ?? (await select({
+  const mapping = norm.mapping ?? (await select({
     message: 'Mapping:',
     choices: [
       { name: 'Manual Mapping', value: 'manual' },
@@ -302,7 +358,7 @@ async function resolveCustomBackend(parsed, mode = 'backend-only', savedPreferen
     ],
   }));
 
-  const orm = parsed.orm ?? (await select({
+  const orm = norm.orm ?? (await select({
     message: 'Data Access:',
     choices: [
       { name: 'Entity Framework Core', value: 'efcore' },
@@ -311,7 +367,7 @@ async function resolveCustomBackend(parsed, mode = 'backend-only', savedPreferen
     ],
   }));
 
-  const database = parsed.database ?? (await select({
+  const database = norm.database ?? (await select({
     message: 'Database:',
     choices: [
       { name: 'SQL Server', value: 'sqlserver' },
@@ -320,7 +376,7 @@ async function resolveCustomBackend(parsed, mode = 'backend-only', savedPreferen
     ],
   }));
 
-  const logging = parsed.logging ?? (await select({
+  const logging = norm.logging ?? (await select({
     message: 'Logging:',
     choices: [
       { name: 'Serilog', value: 'serilog' },
@@ -328,7 +384,7 @@ async function resolveCustomBackend(parsed, mode = 'backend-only', savedPreferen
     ],
   }));
 
-  const backgroundJobs = parsed.backgroundJobs ?? (await select({
+  const backgroundJobs = norm.backgroundJobs ?? (await select({
     message: 'Background Jobs:',
     choices: [
       { name: 'None', value: 'none' },
@@ -336,7 +392,7 @@ async function resolveCustomBackend(parsed, mode = 'backend-only', savedPreferen
     ],
   }));
 
-  const realtime = parsed.realtime ?? (await select({
+  const realtime = norm.realtime ?? (await select({
     message: 'Real Time Communication:',
     choices: [
       { name: 'None', value: 'none' },
@@ -362,7 +418,7 @@ async function resolveCustomBackend(parsed, mode = 'backend-only', savedPreferen
     ];
   }
 
-  const authentication = parsed.authMode ?? (await select({
+  const authentication = norm.authentication ?? (await select({
     message: 'Authentication:',
     choices: authChoices,
   }));
@@ -378,6 +434,7 @@ async function resolveCustomBackend(parsed, mode = 'backend-only', savedPreferen
     backgroundJobs,
     realtime,
     authentication,
+    dotnet: norm.dotnet,
   };
 }
 
@@ -386,15 +443,31 @@ async function resolveCustomBackend(parsed, mode = 'backend-only', savedPreferen
  * @param {object} [baseFrontend]
  */
 async function resolveCustomFrontend(parsed, baseFrontend) {
-  const library = baseFrontend?.library ?? (await resolveFrontendLibrary(parsed));
+  const norm = normalizeFrontendOptions(parsed);
+  const library = norm.library ?? baseFrontend?.library ?? (await resolveFrontendLibrary(parsed));
 
   if (library === 'angular') {
-    const styling = parsed.styling ?? 'tailwind';
-    const localization = parsed.localization ?? (await confirm({
+    const styling = norm.styling ?? 'tailwind';
+    const state = norm.state ?? (parsed.yes ? 'ngrx' : await select({
+      message: 'State Management:',
+      choices: [
+        { name: 'NgRx', value: 'ngrx' },
+        { name: 'None', value: 'none' },
+      ],
+    }));
+    const componentSystem = norm.componentSystem ?? (parsed.yes ? 'none' : await select({
+      message: 'UI Library:',
+      choices: [
+        { name: 'Angular Material', value: 'angular-material' },
+        { name: 'Ant Design Angular', value: 'antd-angular' },
+        { name: 'None', value: 'none' },
+      ],
+    }));
+    const localization = norm.localization !== undefined ? norm.localization : (parsed.yes ? true : await confirm({
       message: 'Include UI localization foundation (en/ar, RTL/LTR)?',
       default: true,
     }));
-    const realtime = parsed.realtime ?? (await select({
+    const realtime = norm.realtime ?? (parsed.yes ? 'none' : await select({
       message: 'Real Time Communication:',
       choices: [
         { name: 'None', value: 'none' },
@@ -408,19 +481,37 @@ async function resolveCustomFrontend(parsed, baseFrontend) {
       framework: null,
       language: 'typescript',
       styling,
-      state: 'ngrx',
+      state,
       httpClient: 'httpclient',
       forms: 'reactive-forms',
-      componentSystem: 'none',
-      localization,
+      componentSystem,
+      localization: Boolean(localization),
       realtime,
     };
   }
 
   // React Customization
-  const framework = baseFrontend?.framework ?? (await resolveReactFramework(parsed));
+  const framework = norm.framework ?? baseFrontend?.framework ?? (await resolveReactFramework(parsed));
 
-  const language = parsed.language ?? (await select({
+  if (parsed.yes) {
+    const styling = norm.styling ?? DEFAULT_OPTIONS.styling;
+    const componentSystem = norm.componentSystem ?? (styling === 'tailwind' ? DEFAULT_OPTIONS.componentSystem : 'none');
+    return {
+      enabled: true,
+      library: 'react',
+      framework,
+      language: norm.language ?? DEFAULT_OPTIONS.language,
+      styling,
+      state: norm.state ?? DEFAULT_OPTIONS.state,
+      httpClient: norm.httpClient ?? DEFAULT_OPTIONS.httpClient,
+      forms: norm.forms ?? DEFAULT_OPTIONS.forms,
+      componentSystem,
+      localization: norm.localization !== undefined ? norm.localization : DEFAULT_OPTIONS.localization,
+      realtime: norm.realtime ?? DEFAULT_OPTIONS.realtime,
+    };
+  }
+
+  const language = norm.language ?? (await select({
     message: 'Language:',
     choices: [
       { name: 'TypeScript', value: 'typescript' },
@@ -428,7 +519,7 @@ async function resolveCustomFrontend(parsed, baseFrontend) {
     ],
   }));
 
-  const styling = parsed.styling ?? (await select({
+  const styling = norm.styling ?? (await select({
     message: 'Styling:',
     choices: [
       { name: 'Tailwind CSS', value: 'tailwind' },
@@ -436,7 +527,7 @@ async function resolveCustomFrontend(parsed, baseFrontend) {
     ],
   }));
 
-  const state = parsed.state ?? (await select({
+  const state = norm.state ?? (await select({
     message: 'State Management:',
     choices: [
       { name: 'Redux Toolkit', value: 'redux' },
@@ -445,7 +536,7 @@ async function resolveCustomFrontend(parsed, baseFrontend) {
     ],
   }));
 
-  const httpClient = parsed.httpClient ?? (await select({
+  const httpClient = norm.httpClient ?? (await select({
     message: 'HTTP Client:',
     choices: [
       { name: 'Axios', value: 'axios' },
@@ -453,7 +544,7 @@ async function resolveCustomFrontend(parsed, baseFrontend) {
     ],
   }));
 
-  const forms = parsed.forms ?? (await select({
+  const forms = norm.forms ?? (await select({
     message: 'Forms:',
     choices: [
       { name: 'React Hook Form + Zod', value: 'react-hook-form-zod' },
@@ -461,7 +552,7 @@ async function resolveCustomFrontend(parsed, baseFrontend) {
     ],
   }));
 
-  const localization = parsed.localization ?? (await select({
+  const localization = norm.localization !== undefined ? norm.localization : (await select({
     message: 'Localization:',
     choices: [
       { name: 'Enabled (Multi-language & RTL/LTR support)', value: true },
@@ -470,22 +561,22 @@ async function resolveCustomFrontend(parsed, baseFrontend) {
   }));
 
   // Component System (Filter shadcn/ui out if Bootstrap is selected)
-  const componentChoices = [
+  let componentChoices = [
     { name: 'Material UI (MUI)', value: 'mui' },
     { name: 'Ant Design', value: 'antd' },
     { name: 'None (Clean unstyled components)', value: 'none' },
   ];
 
   if (styling === 'tailwind') {
-    componentChoices.unshift({ name: 'shadcn/ui', value: 'shadcn' });
+    componentChoices = [{ name: 'shadcn/ui', value: 'shadcn' }, ...componentChoices];
   }
 
-  const componentSystem = parsed.componentSystem ?? (await select({
+  const componentSystem = norm.componentSystem ?? (await select({
     message: 'Component System:',
     choices: componentChoices,
   }));
 
-  const realtime = parsed.realtime ?? (await select({
+  const realtime = norm.realtime ?? (await select({
     message: 'Real Time Communication:',
     choices: [
       { name: 'None', value: 'none' },

@@ -51,10 +51,11 @@ test('EF Core + Identity + JWT remains a supported combination', () => {
       projectName: 'TestApp',
       manifest,
     });
-    assert.ok(files.some((file) => file.relativePath.replaceAll('\\', '/').endsWith('AuthDataSeeder.cs')));
+    assert.ok(files.some((file) => file.relativePath.replaceAll('\\', '/').endsWith('RoleSeeder.cs')));
+    assert.ok(files.some((file) => file.relativePath.replaceAll('\\', '/').endsWith('DatabaseSeeder.cs')));
     assert.ok(files.some((file) => /AddEntityFrameworkStores/.test(file.contents)));
-    assert.ok(files.some((file) => file.relativePath.replaceAll('\\', '/').includes('Infrastructure/Identity/ApplicationUser.cs')));
-    assert.ok(files.some((file) => file.relativePath.replaceAll('\\', '/').includes('Infrastructure/Authentication/JwtTokenService.cs')));
+    assert.ok(files.some((file) => file.relativePath.replaceAll('\\', '/').includes('Infrastructure/Identity/Entities/ApplicationUser.cs')));
+    assert.ok(files.some((file) => file.relativePath.replaceAll('\\', '/').includes('Infrastructure/Authentication/Services/JwtTokenService.cs')));
     assert.ok(files.some((file) => file.relativePath.replaceAll('\\', '/').endsWith('AuthenticationServiceExtensions.cs')));
     assert.ok(files.some((file) => file.relativePath.replaceAll('\\', '/').endsWith('API/Controllers/AuthController.cs')));
     assert.ok(files.every((file) => !file.relativePath.includes('Endpoints')));

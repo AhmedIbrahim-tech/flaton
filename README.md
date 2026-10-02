@@ -120,80 +120,126 @@ Generates the frontend application directly at the project root:
 
 ---
 
-## Recommended Defaults vs Customization
+## CLI Execution Modes
 
-For each mode, developers can choose:
-- **Recommended Defaults (Fast)**: Pre-configured, battle-tested stack.
-- **Customize Architecture**: Tailor database, ORM, state management, UI libraries, and more.
+The generator supports three execution modes:
 
-### Backend Architecture Options
-
-| Decision | Recommended Default | Customizable Options | CLI Flag |
-| :--- | :--- | :--- | :--- |
-| **Architecture** | CQRS + MediatR | CQRS + MediatR, Application Services | `--architecture <cqrs-mediatr\|services>` |
-| **ORM / Data Access** | Entity Framework Core | EF Core, Dapper, EF Core + Dapper | `--orm <efcore\|dapper\|efcore-dapper>` |
-| **Database** | SQL Server | SQL Server, PostgreSQL, SQLite | `--database <sqlserver\|postgresql\|sqlite>` |
-| **Mapping** | Manual Mapping | Manual, AutoMapper, Mapster | `--mapping <manual\|automapper\|mapster>` |
-| **Authentication** | Identity + JWT | Identity + JWT, Identity Only, None | `--auth-mode <identity-jwt\|identity\|none>` |
-| **Logging** | Serilog | Serilog, Built-in ILogger | `--logging <serilog\|ilogger>` |
-| **Background Jobs** | None | None, Hangfire | `--background-jobs <none\|hangfire>` |
-| **Real-time** | None | None, SignalR | `--realtime <none\|signalr>` |
-
-### Frontend Architecture Options
-
-| Decision | Recommended Default | Customizable Options | CLI Flag |
-| :--- | :--- | :--- | :--- |
-| **Library / Framework** | React (Next.js App Router) | React (Next.js), React (Vite), Angular | `--frontend <react\|angular>`, `--react-framework <next\|vite>` |
-| **Language** | TypeScript | TypeScript, JavaScript (React only) | `--language <typescript\|javascript>` |
-| **Styling** | Tailwind CSS | Tailwind CSS, Bootstrap | `--styling <tailwind\|bootstrap>` |
-| **State Management** | Redux Toolkit | Redux Toolkit, Zustand (React), NgRx (Angular), None | `--state <redux\|zustand\|ngrx\|none>` |
-| **HTTP Client** | Axios | Axios, Fetch API, Angular HttpClient | `--http-client <axios\|fetch>` |
-| **Forms & Validation** | React Hook Form + Zod | RHF + Zod, Angular Reactive Forms, None | `--forms <react-hook-form-zod\|reactive-forms\|none>` |
-| **Component System** | shadcn/ui | shadcn/ui, Material UI, Ant Design, None | `--component-system <shadcn\|mui\|antd\|none>` |
-
----
-
-## Non-Interactive & Automation Flags
-
-Scaffold projects non-interactively using CLI flags:
-
-### Full Stack Example
+### 1. Interactive Mode
+Run the generator with just a project name to walk through the interactive wizard:
 ```bash
-generate-fullstack-app MyApp --yes \
-  --mode fullstack \
-  --database postgresql \
+npx generate-fullstack-app my-app
+```
+
+### 2. Hybrid Mode
+Provide partial configuration flags; the generator will use the supplied flags and prompt only for missing applicable options:
+```bash
+npx generate-fullstack-app my-app \
+  --type backend \
   --orm efcore \
+  --db postgresql
+```
+
+### 3. Non-Interactive Mode (`--yes`)
+Provide full or partial flags with `--yes` to scaffold immediately with zero prompts, using recommended defaults for any omitted optional settings:
+
+#### Non-Interactive Backend Only
+```bash
+npx generate-fullstack-app my-app \
+  --type backend \
+  --backend-type controllers \
+  --architecture cqrs \
+  --dotnet 10 \
+  --mapping manual \
+  --orm efcore \
+  --db postgresql \
+  --auth jwt \
+  --signalr \
+  --hangfire \
+  --yes
+```
+
+#### Non-Interactive Frontend Only
+```bash
+npx generate-fullstack-app my-ui \
+  --type frontend \
   --frontend react \
-  --react-framework next \
+  --frontend-tooling vite \
+  --language typescript \
   --styling tailwind \
-  --auth --users --permissions --dashboard
+  --state zustand \
+  --http axios \
+  --forms rhf-zod \
+  --ui shadcn \
+  --yes
 ```
 
-### Backend Only Example
+#### Non-Interactive Full Stack
 ```bash
-generate-fullstack-app MyApi --backend-only --yes \
-  --database postgresql \
-  --architecture cqrs-mediatr \
-  --background-jobs hangfire
-```
-
-### Frontend Only Example
-```bash
-generate-fullstack-app MyUi --frontend-only --yes \
+npx generate-fullstack-app my-app \
+  --type fullstack \
+  --architecture services \
+  --dotnet 10 \
+  --mapping manual \
+  --orm efcore \
+  --db postgresql \
+  --auth jwt \
+  --signalr \
+  --hangfire \
   --frontend react \
-  --react-framework vite \
+  --frontend-tooling vite \
+  --language typescript \
   --styling tailwind \
-  --state zustand
-```
-
-### User Preferences
-Save and reuse your preferred choices across projects:
-```bash
-generate-fullstack-app MyApp --save-defaults
-generate-fullstack-app NextApp --use-saved-preferences --yes
+  --state zustand \
+  --http axios \
+  --forms rhf-zod \
+  --ui shadcn \
+  --yes
 ```
 
 ---
+
+## Canonical CLI Flags
+
+### Project & Backend Options
+| Flag | Values | Description |
+| :--- | :--- | :--- |
+| `--type` | `fullstack` \| `backend` \| `frontend` | Project mode |
+| `--backend-type` | `controllers` \| `minimal-api` \| `mvc` \| `razor-pages` | Presentation layer (Backend Only) |
+| `--dotnet` | `10` \| `9` \| `8` | Target .NET version |
+| `--architecture` | `cqrs` \| `services` | Application architecture |
+| `--mapping` | `manual` \| `automapper` | Object mapping strategy |
+| `--orm` | `efcore` \| `dapper` \| `hybrid` | Data access / ORM |
+| `--db` | `sqlserver` \| `postgresql` \| `sqlite` | Database engine |
+| `--auth` | `jwt` \| `cookies` \| `none` | Authentication model |
+| `--logging` | `serilog` \| `builtin` | Logging provider |
+| `--signalr` / `--no-signalr` | _boolean_ | Enable / disable SignalR |
+| `--hangfire` / `--no-hangfire` | _boolean_ | Enable / disable Hangfire |
+
+### Frontend Options
+| Flag | Values | Description |
+| :--- | :--- | :--- |
+| `--frontend` | `react` \| `angular` | Frontend framework |
+| `--frontend-tooling` | `vite` \| `next` \| `angular-cli` | Build tooling / framework |
+| `--language` | `typescript` \| `javascript` | Frontend language |
+| `--styling` | `tailwind` \| `bootstrap` | Styling system |
+| `--state` | `redux` \| `zustand` \| `ngrx` \| `none` | State management |
+| `--http` | `axios` \| `fetch` \| `angular-http` | HTTP client |
+| `--forms` | `rhf-zod` \| `angular-reactive` \| `none` | Form handling |
+| `--ui` | `shadcn` \| `mui` \| `antd` \| `angular-material` \| `antd-angular` \| `none` | Component library |
+| `--localization` / `--no-localization` | _boolean_ | Enable / disable localization |
+
+### General Options
+| Flag | Values | Description |
+| :--- | :--- | :--- |
+| `-y`, `--yes` | _boolean_ | Non-interactive mode (skips prompts and uses defaults) |
+| `--verbose` | _boolean_ | Stream full stdout/stderr from internal commands |
+| `-o`, `--output` | `<dir>` | Target output directory (default: current working directory) |
+| `-p`, `--package-manager` | `npm` \| `yarn` \| `pnpm` | Preferred frontend package manager |
+| `-h`, `--help` | _boolean_ | Display CLI help |
+| `-v`, `--version` | _boolean_ | Display version |
+
+---
+
 
 ## Running Generated Projects
 

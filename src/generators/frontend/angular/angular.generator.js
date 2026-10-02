@@ -46,7 +46,7 @@ export async function generateAngularFrontend(options) {
   );
 
   const clientDir = await promoteStagingClient(options.targetDirectory, frontendDir, options.folderName);
-  logger.success('Angular client created');
+  logger.success('Frontend created');
 
   add(options.packageManager, ['@ngrx/store@20', '@ngrx/effects@20', '@ngrx/store-devtools@20'], {
     cwd: clientDir,

@@ -25,6 +25,7 @@ export function printGenerationSummary(options) {
     lines.push(
       '',
       `Backend (${presentationTitle}):`,
+      `  • .NET:             ${backend.dotnet ?? '10'}`,
       `  • Architecture:     Clean Architecture (${backend.architecture === 'services' ? 'Application Services' : 'CQRS + MediatR'})`,
       `  • Data Access:      ${backend.orm === 'dapper' ? 'Dapper' : backend.orm === 'efcore-dapper' ? 'EF Core + Dapper' : 'Entity Framework Core'}`,
       `  • Database:         ${backend.database === 'postgresql' ? 'PostgreSQL' : backend.database === 'sqlite' ? 'SQLite' : 'SQL Server'}`,

@@ -195,7 +195,7 @@ function planUsersBackend(ns) {
       contents: renderController(ns),
     },
     {
-      relativePath: paths.infrastructure('Identity', 'UserDirectory.cs'),
+      relativePath: paths.infrastructure('Identity', 'Services', 'UserDirectory.cs'),
       contents: renderUserDirectoryImplementation(ns),
     },
   ];
@@ -791,9 +791,9 @@ using ${ns}.Application.Abstractions.Identity;
 using ${ns}.Application.Common.Models;
 using ${ns}.Application.Common.Results;
 using ${ns}.Application.Features.Users.DTOs;
-using ${ns}.Infrastructure.Identity;
+using ${ns}.Infrastructure.Identity.Entities;
 
-namespace ${ns}.Infrastructure.Identity;
+namespace ${ns}.Infrastructure.Identity.Services;
 
 /// <summary>
 /// Maps ASP.NET Core Identity users to safe DTOs. Requires the auth module's

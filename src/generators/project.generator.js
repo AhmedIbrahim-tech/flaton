@@ -31,7 +31,7 @@ export async function generateProject(options) {
     );
   }
 
-  logger.success('Project name validated');
+  logger.info('Generating project...');
   await ensureDir(targetDirectory);
   logger.success('Root directory created');
 
@@ -76,6 +76,7 @@ export async function generateProject(options) {
       cwd: backendDirectory,
       step: 'Restore backend packages',
     });
+    logger.success('Dependencies configured');
   }
 
   if (hasFrontend && frontendDirectory) {
@@ -96,7 +97,15 @@ export async function generateProject(options) {
     });
   }
 
-  logger.success('Starter architecture generated');
+  if (hasBackend && backendDirectory) {
+    runCommand('dotnet', ['build', '--no-restore'], {
+      cwd: backendDirectory,
+      step: 'Build backend solution',
+    });
+    logger.success('Backend build succeeded');
+  }
+
+  logger.success('Project generated successfully');
   logger.info(`Created ${options.displayName} at ${targetDirectory}`);
   if (hasBackend) {
     logger.info(`Backend: ${describeBackend(options.backend)}`);

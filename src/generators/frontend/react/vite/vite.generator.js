@@ -42,7 +42,7 @@ export async function generateViteFrontend(options) {
   );
 
   const clientDir = await promoteStagingClient(options.targetDirectory, frontendDir, options.folderName);
-  logger.success('Vite client created');
+  logger.success('Frontend created');
 
   if (!(await pathExists(path.join(clientDir, 'node_modules')))) {
     install(options.packageManager, {

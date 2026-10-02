@@ -367,7 +367,6 @@ ${includeGeneratedHook ? `
 ` : ''}}
 `;
 }
-
 export function renderApiServiceExtensions(ns, config = {}) {
   const usings = [
     `using ${ns}.API.Middleware;`,
@@ -375,11 +374,39 @@ export function renderApiServiceExtensions(ns, config = {}) {
     'using Microsoft.Extensions.DependencyInjection;',
   ];
 
+  const isJwt = config.isJwt !== false;
+  if (config.hasAuth) {
+    usings.push(
+      'using Microsoft.AspNetCore.Authorization;',
+      `using ${ns}.Application.Abstractions.Identity;`,
+      `using ${ns}.API.Authorization;`,
+      `using ${ns}.API.Services;`,
+    );
+    if (isJwt) {
+      usings.push(
+        `using ${ns}.Application.Abstractions.Authentication;`,
+        `using ${ns}.API.Authentication.Services;`,
+        `using ${ns}.API.Authentication.Options;`,
+      );
+    }
+  }
+
   const controllerRegistration = config.minimalApi
     ? ''
     : '        services.AddControllers();\n';
 
-  return `${usings.join('\n')}
+  let authRegistration = '';
+  if (config.hasAuth) {
+    authRegistration = `        services.AddHttpContextAccessor();
+        services.AddScoped<ICurrentUser, CurrentUserService>();
+${isJwt ? `        services.Configure<RefreshTokenCookieOptions>(configuration.GetSection(RefreshTokenCookieOptions.SectionName));
+        services.AddScoped<IRefreshTokenCookieManager, RefreshTokenCookieManager>();
+        services.AddScoped<IAuthCookieService, AuthCookieService>();\n` : ''}        services.AddAuthorization();
+        services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+        services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();\n`;
+  }
+
+  return `${[...new Set(usings)].join('\n')}
 
 namespace ${ns}.API.DependencyInjection;
 
@@ -394,7 +421,7 @@ ${controllerRegistration}        services.AddExceptionHandler<GlobalExceptionHan
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen();
         services.AddHealthChecks();
-${config.extraRegistrations ?? ''}
+${authRegistration}${config.extraRegistrations ?? ''}
         var allowedOrigins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
             ?? ["http://localhost:3000", "http://localhost:5173", "http://localhost:4200"];
         services.AddCors(options =>
@@ -421,8 +448,37 @@ export function renderWebServiceExtensions(ns, config = {}) {
     ? '        services.AddRazorPages();'
     : '        services.AddControllersWithViews();';
 
-  return `using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
+  const usings = [
+    'using Microsoft.Extensions.Configuration;',
+    'using Microsoft.Extensions.DependencyInjection;',
+  ];
+
+  const isJwt = config.isJwt !== false;
+  let authRegistration = '';
+  if (config.hasAuth) {
+    usings.push(
+      'using Microsoft.AspNetCore.Authorization;',
+      `using ${ns}.Application.Abstractions.Identity;`,
+      `using ${ns}.Web.Authorization;`,
+      `using ${ns}.Web.Services;`,
+    );
+    if (isJwt) {
+      usings.push(
+        `using ${ns}.Application.Abstractions.Authentication;`,
+        `using ${ns}.Web.Authentication.Services;`,
+        `using ${ns}.Web.Authentication.Options;`,
+      );
+    }
+    authRegistration = `\n        services.AddHttpContextAccessor();
+        services.AddScoped<ICurrentUser, CurrentUserService>();
+${isJwt ? `        services.Configure<RefreshTokenCookieOptions>(configuration.GetSection(RefreshTokenCookieOptions.SectionName));
+        services.AddScoped<IRefreshTokenCookieManager, RefreshTokenCookieManager>();
+        services.AddScoped<IAuthCookieService, AuthCookieService>();\n` : ''}        services.AddAuthorization();
+        services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+        services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();`;
+  }
+
+  return `${[...new Set(usings)].join('\n')}
 
 namespace ${ns}.Web.DependencyInjection;
 
@@ -432,7 +488,7 @@ public static class WebServiceExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-${methodRegistration}
+${methodRegistration}${authRegistration}
 ${config.extraRegistrations ?? ''}
         return services;
     }

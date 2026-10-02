@@ -1586,12 +1586,15 @@ export function RegisterForm() {
 }
 
 function renderLoginPage(ctx = { framework: 'next' }) {
-  const nav = reactRouterKit(ctx.framework);
-  const toProp = ctx.framework === 'next' ? 'href' : 'to';
+  const isNext = ctx.framework === 'next';
+  const linkImport = isNext
+    ? 'import Link from "next/link";'
+    : 'import { Link } from "react-router-dom";';
+  const toProp = isNext ? 'href' : 'to';
   return `"use client";
 
 import type { ReactElement } from "react";
-${nav.formImports}
+${linkImport}
 import { LoginForm } from "../components/LoginForm";
 import { AuthFrame } from "@/shared/components/auth/AuthFrame";
 import type { AppLinkProps } from "@/shared/navigation/app-link";
@@ -1620,12 +1623,15 @@ export default function LoginPage() {
 }
 
 function renderRegisterPage(ctx = { framework: 'next' }) {
-  const nav = reactRouterKit(ctx.framework);
-  const toProp = ctx.framework === 'next' ? 'href' : 'to';
+  const isNext = ctx.framework === 'next';
+  const linkImport = isNext
+    ? 'import Link from "next/link";'
+    : 'import { Link } from "react-router-dom";';
+  const toProp = isNext ? 'href' : 'to';
   return `"use client";
 
 import type { ReactElement } from "react";
-${nav.formImports}
+${linkImport}
 import { RegisterForm } from "../components/RegisterForm";
 import { AuthFrame } from "@/shared/components/auth/AuthFrame";
 import type { AppLinkProps } from "@/shared/navigation/app-link";
@@ -1744,7 +1750,7 @@ export function installAuthInterceptors(
   });
 
   const responseId = client.interceptors.response.use(
-    (response: unknown) => response,
+    (response: any) => response,
     async (error: any) => {
       const original = error.config;
       const status = error.response?.status;

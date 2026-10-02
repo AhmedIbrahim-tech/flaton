@@ -1,6 +1,7 @@
 import { create } from "zustand";
+import type { Category } from "@/modules/category/types/category.types";
 
-type CategoryItem = { id: string; name: string; description: string; createdAtUtc?: string };
+type CategoryItem = Category;
 
 type AppState = {
   category: {

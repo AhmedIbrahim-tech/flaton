@@ -4,10 +4,15 @@ import { generateProject } from './generators/project.generator.js';
 import { GenerationError } from './utils/errors.js';
 import { logger } from './utils/logger.js';
 import { handleCliCancellation } from './utils/cli-cancellation.js';
+import { setVerbose } from './utils/command.js';
 
 async function main() {
   try {
     const parsed = parseArguments(process.argv);
+
+    if (parsed.verbose) {
+      setVerbose(true);
+    }
 
     if (parsed.help) {
       printHelp();

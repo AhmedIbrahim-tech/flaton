@@ -71,16 +71,33 @@ export function formatCommand(command, args) {
   return [command, ...args].join(' ');
 }
 
+let isVerboseMode = false;
+
+/**
+ * @param {boolean} value
+ */
+export function setVerbose(value) {
+  isVerboseMode = Boolean(value);
+}
+
+/**
+ * @returns {boolean}
+ */
+export function isVerbose() {
+  return isVerboseMode;
+}
+
 /**
  * @param {string} command
  * @param {string[]} args
- * @param {{ cwd?: string, stdio?: import('node:child_process').StdioOptions, env?: NodeJS.ProcessEnv, step?: string }} [options]
+ * @param {{ cwd?: string, stdio?: import('node:child_process').StdioOptions, env?: NodeJS.ProcessEnv, step?: string, verbose?: boolean }} [options]
  */
 export function runCommand(command, args, options = {}) {
   const target = resolveSpawnTarget(command);
   const cwd = options.cwd ?? process.cwd();
   const step = options.step ?? command;
-  const stdio = options.stdio ?? 'inherit';
+  const verbose = options.verbose ?? isVerboseMode;
+  const stdio = options.stdio ?? (verbose ? 'inherit' : ['ignore', 'pipe', 'pipe']);
   const spawnArgs = [...target.prefix, ...args];
 
   const result = spawnSync(target.file, spawnArgs, {
@@ -93,7 +110,9 @@ export function runCommand(command, args, options = {}) {
   });
 
   if (result.error) {
-    throw new GenerationError(result.error.message, {
+    const captured = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
+    const detail = captured ? `\n${captured}` : '';
+    throw new GenerationError(`${result.error.message}${detail}`, {
       step,
       command: formatCommand(target.display, args),
       targetDirectory: cwd,
@@ -122,5 +141,7 @@ export function runCommandCapture(command, args, options = {}) {
   return runCommand(command, args, {
     ...options,
     stdio: ['ignore', 'pipe', 'pipe'],
+    verbose: false,
   });
 }
+

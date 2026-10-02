@@ -16,8 +16,8 @@ import {
  */
 export async function generateBackend(options) {
   assertDotnetAvailable();
-  const targetFramework = detectTargetFramework();
   const backend = typeof options.backend === 'object' ? options.backend : {};
+  const targetFramework = detectTargetFramework(backend.dotnet ?? options.dotnet);
   const backendDir = options.backendDirectory ?? (options.paths?.backend
     ? (options.paths.backend === '.' ? options.targetDirectory : path.join(options.targetDirectory, options.paths.backend))
     : options.targetDirectory);
@@ -104,9 +104,15 @@ export async function generateBackend(options) {
   }
 
   addProjectReferences(backendDir, presentationFolder);
+  logger.success('Project references configured');
+
   addBackendPackages(backendDir, backendConfig, presentationFolder);
+  await configureToolingPrivateAssets(backendDir);
+  logger.success('Backend packages installed');
+
   await overlayBackendTemplates(options, backendConfig, backendDir);
 }
+
 
 /**
  * @param {string} cwd
@@ -169,10 +175,6 @@ function addBackendPackages(cwd, config, presentationFolder = 'API') {
     applicationPackages.push('Microsoft.EntityFrameworkCore');
   }
 
-  if (shouldGenerateIdentityArtifacts(config.authMode)) {
-    applicationPackages.push('Microsoft.AspNetCore.Authorization');
-  }
-
   addPackages(cwd, path.join('Application', 'Application.csproj'), applicationPackages);
 
   // 2. Infrastructure Layer Packages
@@ -182,7 +184,11 @@ function addBackendPackages(cwd, config, presentationFolder = 'API') {
   ];
 
   if (config.orm === 'efcore' || config.orm === 'efcore-dapper') {
-    infrastructurePackages.push('Microsoft.EntityFrameworkCore.Design');
+    infrastructurePackages.push(
+      'Microsoft.EntityFrameworkCore',
+      'Microsoft.EntityFrameworkCore.Design',
+      'Microsoft.EntityFrameworkCore.Tools',
+    );
 
     if (config.database === 'sqlserver') {
       infrastructurePackages.push('Microsoft.EntityFrameworkCore.SqlServer');
@@ -207,6 +213,9 @@ function addBackendPackages(cwd, config, presentationFolder = 'API') {
 
   if (shouldGenerateIdentityArtifacts(config.authMode) && config.orm !== 'dapper') {
     infrastructurePackages.push('Microsoft.AspNetCore.Identity.EntityFrameworkCore');
+    if (config.authMode === 'identity-jwt') {
+      infrastructurePackages.push('Microsoft.AspNetCore.Authentication.JwtBearer', 'System.IdentityModel.Tokens.Jwt');
+    }
   }
 
   if (config.backgroundJobs === 'hangfire') {
@@ -243,6 +252,34 @@ function addBackendPackages(cwd, config, presentationFolder = 'API') {
   if (presentationPackages.length > 0) {
     addPackages(cwd, path.join(presentationFolder, `${presentationFolder}.csproj`), presentationPackages);
   }
+}
+
+/**
+ * Configure PrivateAssets and IncludeAssets for EF Core design-time/tooling packages in Infrastructure.csproj.
+ *
+ * @param {string} backendDir
+ */
+async function configureToolingPrivateAssets(backendDir) {
+  const infraCsproj = path.join(backendDir, 'Infrastructure', 'Infrastructure.csproj');
+  if (!(await pathExists(infraCsproj))) {
+    return;
+  }
+
+  let xml = await fs.readFile(infraCsproj, 'utf8');
+
+  // Match PackageReference for Microsoft.EntityFrameworkCore.Design
+  xml = xml.replace(
+    /<PackageReference\s+Include="Microsoft\.EntityFrameworkCore\.Design"\s+Version="([^"]+)"\s*\/>/g,
+    '<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="$1">\n      <PrivateAssets>all</PrivateAssets>\n      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>\n    </PackageReference>',
+  );
+
+  // Match PackageReference for Microsoft.EntityFrameworkCore.Tools
+  xml = xml.replace(
+    /<PackageReference\s+Include="Microsoft\.EntityFrameworkCore\.Tools"\s+Version="([^"]+)"\s*\/>/g,
+    '<PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="$1">\n      <PrivateAssets>all</PrivateAssets>\n      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>\n    </PackageReference>',
+  );
+
+  await writeFile(infraCsproj, xml);
 }
 
 /**
@@ -401,6 +438,7 @@ async function overlayBackendTemplates(options, config, backendDir) {
   await writeApplicationDi(backendDir, pascalName, config);
   await writePresentationDi(backendDir, pascalName, config, presentationFolder);
   await writePresentationProgramCs(backendDir, pascalName, config, presentationFolder);
+  await writeGlobalUsings(backendDir, pascalName, config, presentationFolder);
 
   // If Dapper is selected, write IDbConnectionFactory
   if (config.orm === 'dapper' || config.orm === 'efcore-dapper') {
@@ -501,7 +539,11 @@ async function writeAppSettings(targetDir, pascalName, connectionString, config,
  */
 export function renderInfrastructureDi(pascalName, config) {
   let dbRegistration = '';
-  let usings = ['using Microsoft.Extensions.Configuration;', 'using Microsoft.Extensions.DependencyInjection;'];
+  let usings = [
+    'using Microsoft.Extensions.Configuration;',
+    'using Microsoft.Extensions.DependencyInjection;',
+    `using ${pascalName}.Infrastructure.Seeders;`,
+  ];
 
   const needsConnectionString =
     config.orm === 'efcore' ||
@@ -569,6 +611,7 @@ export function renderInfrastructureDi(pascalName, config) {
   }
 
   dbRegistration += `
+        services.AddScoped<DatabaseSeeder>();
         RegisterFeatureInfrastructure(services, configuration);
 `;
 
@@ -633,10 +676,16 @@ async function writeApplicationDi(targetDir, pascalName, config) {
  * @param {string} presentationFolder
  */
 async function writePresentationDi(targetDir, pascalName, config, presentationFolder) {
+  const hasAuth = shouldGenerateIdentityArtifacts(config.authMode);
+  const isJwt = hasAuth && (config.authMode === 'jwt' || config.authentication === 'identity-jwt' || (!config.authMode && !config.authentication));
   if (presentationFolder === 'Web') {
     await writeFile(
       path.join(targetDir, 'Web', 'DependencyInjection', 'WebServiceExtensions.cs'),
-      renderWebServiceExtensions(pascalName, { presentation: config.presentation }),
+      renderWebServiceExtensions(pascalName, {
+        presentation: config.presentation,
+        hasAuth,
+        isJwt,
+      }),
     );
   } else {
     let extra = '';
@@ -648,9 +697,138 @@ async function writePresentationDi(targetDir, pascalName, config, presentationFo
       renderApiServiceExtensions(pascalName, {
         minimalApi: config.presentation === 'minimal-api',
         extraRegistrations: extra,
+        hasAuth,
+        isJwt,
       }),
     );
   }
+}
+
+/**
+ * Generate layer-specific GlobalUsings.cs for each project.
+ *
+ * @param {string} backendDir
+ * @param {string} pascalName
+ * @param {object} config
+ * @param {string} presentationFolder
+ */
+export async function writeGlobalUsings(backendDir, pascalName, config, presentationFolder) {
+  // 1. Domain/GlobalUsings.cs (Framework-independent, BCL only)
+  const domainUsings = [
+    'global using System;',
+    'global using System.Collections.Generic;',
+    'global using System.Linq;',
+    'global using System.Threading;',
+    'global using System.Threading.Tasks;',
+  ];
+  await writeFile(
+    path.join(backendDir, 'Domain', 'GlobalUsings.cs'),
+    `${domainUsings.join('\n')}\n`,
+  );
+
+  // 2. Application/GlobalUsings.cs
+  const applicationUsings = [
+    'global using System;',
+    'global using System.Collections.Generic;',
+    'global using System.Linq;',
+    'global using System.Threading;',
+    'global using System.Threading.Tasks;',
+    `global using ${pascalName}.Domain.Common;`,
+    `global using ${pascalName}.Domain.Exceptions;`,
+    `global using ${pascalName}.Application.Common.Results;`,
+  ];
+
+  if (config.architecture === 'cqrs-mediatr') {
+    applicationUsings.push('global using MediatR;');
+  }
+
+  if (config.validation === 'fluentvalidation') {
+    applicationUsings.push('global using FluentValidation;');
+  }
+
+  if (config.mapping === 'automapper') {
+    applicationUsings.push('global using AutoMapper;');
+  }
+
+  await writeFile(
+    path.join(backendDir, 'Application', 'GlobalUsings.cs'),
+    `${applicationUsings.join('\n')}\n`,
+  );
+
+  // 3. Infrastructure/GlobalUsings.cs
+  const infrastructureUsings = [
+    'global using System;',
+    'global using System.Collections.Generic;',
+    'global using System.Linq;',
+    'global using System.Threading;',
+    'global using System.Threading.Tasks;',
+    'global using Microsoft.Extensions.Configuration;',
+    'global using Microsoft.Extensions.DependencyInjection;',
+    'global using Microsoft.Extensions.Logging;',
+  ];
+
+  if (config.orm === 'efcore' || config.orm === 'efcore-dapper') {
+    infrastructureUsings.push('global using Microsoft.EntityFrameworkCore;');
+  }
+
+  if (shouldGenerateIdentityArtifacts(config.authMode) && config.orm !== 'dapper') {
+    infrastructureUsings.push(
+      'global using Microsoft.AspNetCore.Identity;',
+      `global using ${pascalName}.Infrastructure.Identity.Entities;`,
+      `global using ${pascalName}.Infrastructure.Identity.Services;`,
+    );
+  }
+
+  await writeFile(
+    path.join(backendDir, 'Infrastructure', 'GlobalUsings.cs'),
+    `${infrastructureUsings.join('\n')}\n`,
+  );
+
+  // 4. Presentation (API or Web) GlobalUsings.cs
+  const isWeb = presentationFolder === 'Web';
+  const presentationUsings = [
+    'global using System;',
+    'global using System.Collections.Generic;',
+    'global using System.Linq;',
+    'global using System.Threading;',
+    'global using System.Threading.Tasks;',
+    'global using Microsoft.AspNetCore.Builder;',
+    'global using Microsoft.AspNetCore.Http;',
+    'global using Microsoft.Extensions.DependencyInjection;',
+    'global using Microsoft.Extensions.Hosting;',
+    'global using Microsoft.Extensions.Logging;',
+  ];
+
+  if (isWeb || config.presentation === 'controllers') {
+    presentationUsings.push('global using Microsoft.AspNetCore.Mvc;');
+  }
+
+  if (config.architecture === 'cqrs-mediatr') {
+    presentationUsings.push('global using MediatR;');
+  }
+
+  if (config.logging === 'serilog') {
+    presentationUsings.push('global using Serilog;');
+  }
+
+  if (shouldGenerateIdentityArtifacts(config.authMode)) {
+    const isJwt = config.authMode === 'jwt' || config.authentication === 'identity-jwt' || (!config.authMode && !config.authentication);
+    presentationUsings.push(
+      'global using Microsoft.AspNetCore.Authorization;',
+      `global using ${pascalName}.${presentationFolder}.Attributes;`,
+      `global using ${pascalName}.${presentationFolder}.Authorization;`,
+      `global using ${pascalName}.${presentationFolder}.Services;`,
+      `global using ${pascalName}.Application.Common.Authorization;`,
+    );
+    if (isJwt) {
+      presentationUsings.push(`global using ${pascalName}.${presentationFolder}.Authentication.Services;`);
+    }
+  }
+
+  await writeFile(
+    path.join(backendDir, presentationFolder, 'GlobalUsings.cs'),
+    `${presentationUsings.join('\n')}\n`,
+  );
 }
 
 /**

@@ -19,7 +19,7 @@ export function useCategoriesController() {
     setCategoryStatus("loading");
     void categoryService
       .search(query)
-      .then((result) => setCategoryItems(result.items ?? result.data ?? []))
+      .then((result) => setCategoryItems(result.data ?? []))
       .catch((err) => setCategoryError(err instanceof Error ? err.message : "Unable to load categories"));
   }, [setCategoryError, setCategoryItems, setCategoryStatus]);
 

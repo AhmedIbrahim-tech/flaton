@@ -160,12 +160,14 @@ export function routerUpdate(projectName, className, resourcePath, routes) {
  */
 export function currentUserAbstraction(projectName) {
   const ns = projectName;
-  // Must match auth module contract (Application.Abstractions.ICurrentUser).
+  const isWeb = currentManifestContext?.backend?.presentation === 'mvc' || currentManifestContext?.backend?.presentation === 'razor-pages';
+  const targetFolder = isWeb ? 'Web' : 'API';
+  const targetFn = isWeb ? paths.web : paths.api;
   return [
     {
       writeMode: 'ifMissing',
-      relativePath: paths.application('Abstractions', 'ICurrentUser.cs'),
-      contents: `namespace ${ns}.Application.Abstractions;
+      relativePath: paths.application('Abstractions', 'Identity', 'ICurrentUser.cs'),
+      contents: `namespace ${ns}.Application.Abstractions.Identity;
 
 public interface ICurrentUser
 {
@@ -183,19 +185,19 @@ public interface ICurrentUser
     },
     {
       writeMode: 'ifMissing',
-      relativePath: paths.infrastructure('Identity', 'CurrentUser.cs'),
+      relativePath: targetFn('Services', 'CurrentUserService.cs'),
       contents: `using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
-using ${ns}.Application.Abstractions;
+using ${ns}.Application.Abstractions.Identity;
 
-namespace ${ns}.Infrastructure.Identity;
+namespace ${ns}.${targetFolder}.Services;
 
-public sealed class CurrentUser : ICurrentUser
+public sealed class CurrentUserService : ICurrentUser
 {
     private readonly IHttpContextAccessor _httpContextAccessor;
 
-    public CurrentUser(IHttpContextAccessor httpContextAccessor)
+    public CurrentUserService(IHttpContextAccessor httpContextAccessor)
     {
         _httpContextAccessor = httpContextAccessor;
     }

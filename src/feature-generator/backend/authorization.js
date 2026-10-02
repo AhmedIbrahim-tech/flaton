@@ -28,8 +28,11 @@ export function authorizationUsings(config) {
   }
 
   const ns = config.projectName;
+  const isWeb = config.manifest?.backend?.presentation === 'mvc' || config.manifest?.backend?.presentation === 'razor-pages';
+  const attrNs = isWeb ? `${ns}.Web.Attributes` : `${ns}.API.Attributes`;
   const usings = ['using Microsoft.AspNetCore.Authorization;'];
   if (usesPermissionAttributes(config)) {
+    usings.push(`using ${attrNs};`);
     usings.push(`using ${ns}.Application.Common.Authorization;`);
   }
   return usings;
