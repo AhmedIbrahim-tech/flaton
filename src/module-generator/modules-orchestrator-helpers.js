@@ -49,6 +49,8 @@ export const paths = {
   /** @param {...string} segments */
   api: (...segments) => getBackendFilePath(currentManifestContext, 'API', ...segments),
   /** @param {...string} segments */
+  web: (...segments) => getBackendFilePath(currentManifestContext, 'Web', ...segments),
+  /** @param {...string} segments */
   client: (...segments) => getFrontendFilePath(currentManifestContext, 'src', ...segments),
   /**
    * @param {string} kebabModule

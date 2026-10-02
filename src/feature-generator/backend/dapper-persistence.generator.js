@@ -5,6 +5,7 @@ import {
   dapperReadRepositoryClassName,
   dapperReadRepositoryName,
   isDapperOnly,
+  isServicesArchitecture,
 } from './architecture.js';
 import {
   infrastructureDiPath,
@@ -83,17 +84,25 @@ function renderRepositoryInterface(config) {
   const ops = config.operations;
   const queriesOnly = !isDapperOnly(config.orm);
   const interfaceName = dapperReadRepositoryName(config);
+  const isServices = isServicesArchitecture(config.architecture);
+  const searchQueryType = isServices ? `Search${pluralName}Dto` : `Search${pluralName}Query`;
   const methods = [];
 
   if (ops.search) {
     methods.push(
-      `    Task<(IReadOnlyList<${singularName}> Items, int TotalCount)> SearchAsync(Search${pluralName}Query query, CancellationToken cancellationToken);`,
+      `    Task<(IReadOnlyList<${singularName}> Items, int TotalCount)> SearchAsync(${searchQueryType} query, CancellationToken cancellationToken);`,
     );
   }
   if (canBeLookupTarget(config)) {
-    methods.push(
-      `    Task<IReadOnlyList<LookupItemDto>> LookupAsync(Lookup${pluralName}Query query, CancellationToken cancellationToken);`,
-    );
+    if (isServices) {
+      methods.push(
+        '    Task<IReadOnlyList<LookupItemDto>> LookupAsync(string? search, int take, CancellationToken cancellationToken);',
+      );
+    } else {
+      methods.push(
+        `    Task<IReadOnlyList<LookupItemDto>> LookupAsync(Lookup${pluralName}Query query, CancellationToken cancellationToken);`,
+      );
+    }
   }
   if (ops.getById || (!queriesOnly && (ops.update || ops.delete))) {
     methods.push(
@@ -122,11 +131,17 @@ function renderRepositoryInterface(config) {
     `using ${ns}.Domain.Entities;`,
   ];
   if (ops.search) {
-    usings.push(`using ${ns}.Application.Features.${pluralName}.Search;`);
+    if (isServices) {
+      usings.push(`using ${ns}.Application.Modules.${pluralName}.DTOs;`);
+    } else {
+      usings.push(`using ${ns}.Application.Features.${pluralName}.Search;`);
+    }
   }
   if (canBeLookupTarget(config)) {
     usings.push(`using ${ns}.Application.Common.Models;`);
-    usings.push(`using ${ns}.Application.Features.${pluralName}.Lookup;`);
+    if (!isServices) {
+      usings.push(`using ${ns}.Application.Features.${pluralName}.Lookup;`);
+    }
   }
 
   return `${[...new Set(usings)].join('\n')}
@@ -154,6 +169,7 @@ function renderRepositoryImplementation(config) {
   const groups = groupFields(config.fields);
   const table = quoteIdent(database, pluralName);
   const display = lookupDisplayMember(config);
+  const isServices = isServicesArchitecture(config.architecture);
 
   const usings = [
     'using System.Data;',
@@ -162,11 +178,17 @@ function renderRepositoryImplementation(config) {
     `using ${ns}.Domain.Entities;`,
   ];
   if (ops.search) {
-    usings.push(`using ${ns}.Application.Features.${pluralName}.Search;`);
+    if (isServices) {
+      usings.push(`using ${ns}.Application.Modules.${pluralName}.DTOs;`);
+    } else {
+      usings.push(`using ${ns}.Application.Features.${pluralName}.Search;`);
+    }
   }
   if (canBeLookupTarget(config)) {
     usings.push(`using ${ns}.Application.Common.Models;`);
-    usings.push(`using ${ns}.Application.Features.${pluralName}.Lookup;`);
+    if (!isServices) {
+      usings.push(`using ${ns}.Application.Features.${pluralName}.Lookup;`);
+    }
   }
 
   const methods = [];
@@ -288,7 +310,12 @@ function renderSearchMethod(config, groups, table, database) {
     .map((field) => `            "${String(field.name).toLowerCase()}" => "${quoteIdent(database, field.name)}",`)
     .join('\n');
 
-  return `    public async Task<(IReadOnlyList<${singularName}> Items, int TotalCount)> SearchAsync(Search${config.feature.pluralName}Query query, CancellationToken cancellationToken)
+  const isServices = isServicesArchitecture(config.architecture);
+  const queryType = isServices
+    ? `Search${config.feature.pluralName}Dto`
+    : `Search${config.feature.pluralName}Query`;
+
+  return `    public async Task<(IReadOnlyList<${singularName}> Items, int TotalCount)> SearchAsync(${queryType} query, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         using var connection = _connections.CreateConnection();
@@ -320,10 +347,34 @@ ${sortCases}
 }
 
 function renderLookupMethod(config, table, database, display) {
+  const isServices = isServicesArchitecture(config.architecture);
   const like = sqlLike(database);
   const paging = database === 'sqlserver'
     ? 'OFFSET 0 ROWS FETCH NEXT @Take ROWS ONLY'
     : 'LIMIT @Take';
+
+  if (isServices) {
+    return `    public async Task<IReadOnlyList<LookupItemDto>> LookupAsync(string? search, int take, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        using var connection = _connections.CreateConnection();
+        var limit = take <= 0 ? 50 : Math.Min(take, 100);
+        var parameters = new DynamicParameters();
+        parameters.Add("Take", limit);
+        var where = "${quoteIdent(database, 'IsDeleted')} = ${sqlFalse(database)}";
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            where += " AND ${quoteIdent(database, display)} ${like} @Search";
+            parameters.Add("Search", $"%{search.Trim()}%");
+        }
+
+        var items = await connection.QueryAsync<LookupItemDto>(
+            $"SELECT ${quoteIdent(database, 'Id')} AS Id, ${quoteIdent(database, display)} AS DisplayName FROM ${table} WHERE {where} ORDER BY ${quoteIdent(database, display)} ${paging}",
+            parameters);
+        return items.AsList();
+    }`;
+  }
+
   return `    public async Task<IReadOnlyList<LookupItemDto>> LookupAsync(Lookup${config.feature.pluralName}Query query, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();

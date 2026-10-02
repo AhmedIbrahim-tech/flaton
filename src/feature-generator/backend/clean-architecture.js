@@ -38,6 +38,27 @@ export function applicationFeatureNamespace(config, ...segments) {
   return parts.join('.');
 }
 
+export function applicationModuleBase(config, ...segments) {
+  return getBackendFilePath(
+    config,
+    'Application',
+    'Modules',
+    config.feature.pluralName,
+    ...segments,
+  );
+}
+
+export function applicationModuleNamespace(config, ...segments) {
+  const parts = [
+    config.projectName,
+    'Application',
+    'Modules',
+    config.feature.pluralName,
+    ...segments,
+  ];
+  return parts.join('.');
+}
+
 /** Fully-qualified domain entity type, safe inside Features.{Entity} namespaces. */
 export function entityClrName(config) {
   return `${config.projectName}.Domain.Entities.${config.feature.singularName}`;
@@ -231,23 +252,40 @@ export function upsertInfrastructureRegistration(existing, ns, usingLines, regis
 /**
  * @param {string} existing
  * @param {string} ns
- * @param {string} featureName Singular application feature name (e.g. Product)
+ * @param {string} singularName Singular application feature name (e.g. Product)
  * @param {string} pluralName
+ * @param {string} [mapping]
  */
-export function upsertApplicationServiceRegistration(existing, ns, featureName, pluralName) {
-  const registration = `        services.AddScoped<I${pluralName}Service, ${pluralName}Service>();`;
+export function upsertApplicationServiceRegistration(existing, ns, singularName, pluralName, mapping = 'manual') {
+  const registration = `        services.AddScoped<I${singularName}Service, ${singularName}Service>();`;
   let content = existing?.trim()
     ? existing
-    : renderApplicationServiceExtensions(ns, { servicesArchitecture: true });
+    : renderApplicationServiceExtensions(ns, { servicesArchitecture: true, mapping });
 
-  content = upsertUsing(content, `using ${ns}.Application.Features.${featureName}.Interfaces;`);
-  content = upsertUsing(content, `using ${ns}.Application.Features.${featureName};`);
+  content = upsertUsing(content, `using ${ns}.Application.Modules.${pluralName}.Interfaces;`);
+  content = upsertUsing(content, `using ${ns}.Application.Modules.${pluralName}.Services;`);
   const placeholder = '        // Feature generator appends service registrations here.';
   if (content.includes(placeholder) && !content.includes(registration.trim())) {
     return ensureTrailingNewline(content.replace(placeholder, registration));
   }
 
   return upsertMethodStatement(content, 'RegisterFeatureServices', registration);
+}
+
+/**
+ * @param {string} existing
+ * @param {string} ns
+ */
+export function upsertAutoMapperRegistration(existing, ns) {
+  if (!existing?.trim()) {
+    return renderApplicationServiceExtensions(ns, { mapping: 'automapper' });
+  }
+  let content = upsertUsing(existing, 'using AutoMapper;');
+  const stmt = '        services.AddAutoMapper(cfg => cfg.AddMaps(typeof(ApplicationServiceExtensions).Assembly));';
+  if (!content.includes('AddAutoMapper(')) {
+    content = upsertMethodStatement(content, 'AddApplication', stmt);
+  }
+  return content;
 }
 
 export function renderApplicationServiceExtensions(ns, { servicesArchitecture = false, mapping = 'manual' } = {}) {
@@ -268,7 +306,7 @@ export function renderApplicationServiceExtensions(ns, { servicesArchitecture = 
 
   if (mapping === 'automapper') {
     usings.push('using AutoMapper;');
-    body += '        services.AddAutoMapper(typeof(ApplicationServiceExtensions).Assembly);\n';
+    body += '        services.AddAutoMapper(cfg => cfg.AddMaps(typeof(ApplicationServiceExtensions).Assembly));\n';
   }
 
   if (servicesArchitecture) {
@@ -337,6 +375,10 @@ export function renderApiServiceExtensions(ns, config = {}) {
     'using Microsoft.Extensions.DependencyInjection;',
   ];
 
+  const controllerRegistration = config.minimalApi
+    ? ''
+    : '        services.AddControllers();\n';
+
   return `${usings.join('\n')}
 
 namespace ${ns}.API.DependencyInjection;
@@ -347,8 +389,7 @@ public static class ApiServiceExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.AddControllers();
-        services.AddExceptionHandler<GlobalExceptionHandler>();
+${controllerRegistration}        services.AddExceptionHandler<GlobalExceptionHandler>();
         services.AddProblemDetails();
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen();
@@ -368,6 +409,31 @@ ${config.extraRegistrations ?? ''}
             });
         });
 
+        return services;
+    }
+}
+`;
+}
+
+export function renderWebServiceExtensions(ns, config = {}) {
+  const isRazorPages = config.presentation === 'razor-pages';
+  const methodRegistration = isRazorPages
+    ? '        services.AddRazorPages();'
+    : '        services.AddControllersWithViews();';
+
+  return `using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace ${ns}.Web.DependencyInjection;
+
+public static class WebServiceExtensions
+{
+    public static IServiceCollection AddWebServices(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+${methodRegistration}
+${config.extraRegistrations ?? ''}
         return services;
     }
 }

@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { confirm } from '@inquirer/prompts';
 import { copyTemplate, ensureDir, isNonEmptyDirectory, templatesRoot } from '../utils/filesystem.js';
 import { GenerationError } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
@@ -132,6 +131,7 @@ async function maybeSaveUserPreferences(options) {
     const prefData = {
       mode: options.mode,
       backend: options.backend?.enabled ? {
+        presentation: options.backend.presentation,
         architecture: options.backend.architecture,
         mapping: options.backend.mapping,
         orm: options.backend.orm,

@@ -3,12 +3,20 @@ import { planPersistenceFiles, planPersistenceRegistryUpdates } from './persiste
 import { planApplicationFiles } from './application.generator.js';
 import { planServiceApplicationFiles, planApplicationServiceRegistry } from './application-services.generator.js';
 import { planApiFiles, planApiRegistryUpdates } from './api.generator.js';
+import { planMinimalApiFiles, planMinimalApiRegistryUpdates } from './minimal-api.generator.js';
+import { planMvcFiles } from './mvc.generator.js';
+import { planRazorPagesFiles } from './razor-pages.generator.js';
 import { planFileStorageInfrastructure, planFileStorageRegistry } from './file-storage.generator.js';
 import { hasMediaField } from '../fields/field-mappers.js';
 import { getBackendFilePath } from '../../utils/project-paths.js';
 import { isServicesArchitecture, usesDapper } from './architecture.js';
 import { planDapperRepositoryRegistry } from './dapper-persistence.generator.js';
-import { applicationFeatureName } from './clean-architecture.js';
+import {
+  applicationDiPath,
+  applicationFeatureName,
+  upsertAutoMapperRegistration,
+} from './clean-architecture.js';
+import { isAutoMapper } from '../feature-profile.js';
 
 /**
  * @param {object} config
@@ -33,7 +41,17 @@ export function planBackendFeature(config, context = {}) {
       ? planServiceApplicationFiles(config)
       : planApplicationFiles(config)),
   );
-  files.push(...planApiFiles(config));
+
+  const presentation = config.presentation ?? 'controllers';
+  if (presentation === 'minimal-api') {
+    files.push(...planMinimalApiFiles(config));
+  } else if (presentation === 'mvc') {
+    files.push(...planMvcFiles(config));
+  } else if (presentation === 'razor-pages') {
+    files.push(...planRazorPagesFiles(config));
+  } else {
+    files.push(...planApiFiles(config));
+  }
 
   return files;
 }
@@ -56,10 +74,23 @@ export function planBackendRegistryUpdates(config, context = {}) {
   }
 
   updates.push(...planPersistenceRegistryUpdates(config));
-  updates.push(...planApiRegistryUpdates(config));
+
+  const presentation = config.presentation ?? 'controllers';
+  if (presentation === 'minimal-api') {
+    updates.push(...planMinimalApiRegistryUpdates(config));
+  } else if (presentation === 'controllers') {
+    updates.push(...planApiRegistryUpdates(config));
+  }
 
   if (isServicesArchitecture(config.architecture)) {
     updates.push(planApplicationServiceRegistry(config));
+  }
+
+  if (isAutoMapper(config)) {
+    updates.push({
+      relativePath: applicationDiPath(config),
+      update: (existing) => upsertAutoMapperRegistration(existing, config.projectName),
+    });
   }
 
   if (hasMediaField(config.fields) && !context.hasFileStorage) {
@@ -75,9 +106,25 @@ export function planBackendRegistryUpdates(config, context = {}) {
  */
 export function backendConflictPaths(config) {
   const { singularName, pluralName } = config.feature;
+  const presentation = config.presentation ?? 'controllers';
+  const presentationPaths = [];
+
+  if (presentation === 'controllers') {
+    presentationPaths.push(getBackendFilePath(config, 'API', 'Controllers', `${pluralName}Controller.cs`));
+  } else if (presentation === 'minimal-api') {
+    presentationPaths.push(getBackendFilePath(config, 'API', 'Endpoints', pluralName));
+  } else if (presentation === 'mvc') {
+    presentationPaths.push(getBackendFilePath(config, 'Web', 'Controllers', `${pluralName}Controller.cs`));
+  } else if (presentation === 'razor-pages') {
+    presentationPaths.push(getBackendFilePath(config, 'Web', 'Pages', pluralName));
+  }
+
   return [
     getBackendFilePath(config, 'Domain', 'Entities', `${singularName}.cs`),
-    getBackendFilePath(config, 'Application', 'Features', applicationFeatureName(config)),
-    getBackendFilePath(config, 'API', 'Controllers', `${pluralName}Controller.cs`),
+    isServicesArchitecture(config.architecture)
+      ? getBackendFilePath(config, 'Application', 'Modules', pluralName)
+      : getBackendFilePath(config, 'Application', 'Features', applicationFeatureName(config)),
+    ...presentationPaths,
   ];
 }
+

@@ -11,8 +11,10 @@ export async function generateSolution(options) {
     : options.targetDirectory);
 
   const slnFile = `${options.pascalName}.slnx`;
+  const presentation = options.backend?.presentation ?? options.presentation ?? 'controllers';
+  const presentationFolder = (presentation === 'mvc' || presentation === 'razor-pages') ? 'Web' : 'API';
   const projects = [
-    path.join('API', 'API.csproj'),
+    path.join(presentationFolder, `${presentationFolder}.csproj`),
     path.join('Application', 'Application.csproj'),
     path.join('Domain', 'Domain.csproj'),
     path.join('Infrastructure', 'Infrastructure.csproj'),

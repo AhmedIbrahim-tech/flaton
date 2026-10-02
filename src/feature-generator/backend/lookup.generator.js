@@ -154,7 +154,7 @@ public sealed class Lookup${pluralName}QueryHandler
 /**
  * @param {object} config
  */
-function renderLookupItemDto(config) {
+export function renderLookupItemDto(config) {
   const ns = config.projectName;
 
   return `namespace ${ns}.Application.Common.Models;

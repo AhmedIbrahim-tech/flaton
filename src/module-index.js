@@ -10,6 +10,7 @@ import {
 } from './module-generator/module.generator.js';
 import { GenerationError } from './utils/errors.js';
 import { logger } from './utils/logger.js';
+import { handleCliCancellation } from './utils/cli-cancellation.js';
 
 async function main() {
   try {
@@ -51,6 +52,9 @@ async function main() {
       roles: parsed.roles,
     });
   } catch (error) {
+    if (handleCliCancellation(error, 'Module generation cancelled.')) {
+      return;
+    }
     if (error instanceof GenerationError) {
       logger.error('Module generation failed.');
       logger.error(`Step: ${error.step}`);

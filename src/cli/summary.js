@@ -16,14 +16,20 @@ export function printGenerationSummary(options) {
 
   if (options.backend?.enabled || options.backend === true) {
     const backend = typeof options.backend === 'object' ? options.backend : options;
+    const presentation = backend.presentation ?? 'controllers';
+    let presentationTitle = 'ASP.NET Core Web API';
+    if (presentation === 'minimal-api') presentationTitle = 'ASP.NET Core Minimal API';
+    else if (presentation === 'mvc') presentationTitle = 'ASP.NET Core MVC';
+    else if (presentation === 'razor-pages') presentationTitle = 'ASP.NET Core Razor Pages';
+
     lines.push(
       '',
-      'Backend (ASP.NET Core Web API):',
+      `Backend (${presentationTitle}):`,
       `  • Architecture:     Clean Architecture (${backend.architecture === 'services' ? 'Application Services' : 'CQRS + MediatR'})`,
       `  • Data Access:      ${backend.orm === 'dapper' ? 'Dapper' : backend.orm === 'efcore-dapper' ? 'EF Core + Dapper' : 'Entity Framework Core'}`,
       `  • Database:         ${backend.database === 'postgresql' ? 'PostgreSQL' : backend.database === 'sqlite' ? 'SQLite' : 'SQL Server'}`,
       `  • Mapping:          ${backend.mapping === 'automapper' ? 'AutoMapper' : 'Manual Mapping'}`,
-      `  • Authentication:   ${backend.authentication === 'none' ? 'None' : backend.authentication === 'identity' ? 'ASP.NET Core Identity' : 'ASP.NET Core Identity + JWT'}`,
+      `  • Authentication:   ${backend.authentication === 'none' ? 'None' : backend.authentication === 'identity' || backend.authentication === 'identity-cookie' ? 'Identity + Cookies' : 'Identity + JWT'}`,
       `  • Logging:          ${backend.logging === 'ilogger' ? 'Built-in ILogger' : 'Serilog'}`,
       `  • Background Jobs:  ${backend.backgroundJobs === 'hangfire' ? 'Hangfire' : 'None'}`,
       `  • Real Time:        ${backend.realtime === 'signalr' ? 'SignalR Hubs' : 'None'}`,

@@ -6,7 +6,7 @@ import {
 import { pluralizePascal, toCamelCase } from '../utils/feature-naming.js';
 import { planLookupFiles, canBeLookupTarget } from './lookup.generator.js';
 import { getBackendFilePath } from '../../utils/project-paths.js';
-import { isDapperOnly, usesDapper } from './architecture.js';
+import { isDapperOnly, isServicesArchitecture, usesDapper } from './architecture.js';
 import { applicationFeatureBase, entityClrName } from './clean-architecture.js';
 import { isAutoMapper } from '../feature-profile.js';
 import {
@@ -153,21 +153,15 @@ export function planApplicationFiles(config) {
 /**
  * @param {object} config
  */
-function usesLookupModels(config) {
+export function usesLookupModels(config) {
   return groupFields(config.fields).toMany.length > 0;
 }
 
-/**
- * @param {object} config
- */
-function usesEnums(config) {
+export function usesEnums(config) {
   return groupFields(config.fields).enums.length > 0;
 }
 
-/**
- * @param {object} config
- */
-function commonUsings(config) {
+export function commonUsings(config) {
   const ns = config.projectName;
   /** @type {string[]} */
   const usings = [];
@@ -180,20 +174,13 @@ function commonUsings(config) {
   return usings;
 }
 
-/**
- * @param {object} field
- */
-function fieldProperty(field) {
+export function fieldProperty(field) {
   const type = toCSharpType(field);
   const init = csharpDefaultInitializer(field);
   return `    public ${type} ${field.name} { get; init; }${init}`;
 }
 
-/**
- * Include statements needed to project navigations into the DTO.
- * @param {ReturnType<typeof groupFields>} groups
- */
-function buildIncludes(groups) {
+export function buildIncludes(groups) {
   /** @type {string[]} */
   const includes = [];
   for (const field of groups.toOne) {
@@ -215,9 +202,13 @@ function buildIncludes(groups) {
 /**
  * @param {object} config
  */
-function renderDto(config) {
+export function renderDto(config) {
   const { singularName, pluralName } = config.feature;
   const ns = config.projectName;
+  const isServices = isServicesArchitecture(config.architecture);
+  const dtoNs = isServices
+    ? `${ns}.Application.Modules.${pluralName}.DTOs`
+    : `${ns}.Application.Features.${singularName}.DTOs`;
   const groups = groupFields(config.fields);
 
   /** @type {string[]} */
@@ -265,7 +256,7 @@ function renderDto(config) {
   const usings = commonUsings(config);
   const usingBlock = usings.length > 0 ? `${usings.join('\n')}\n\n` : '';
 
-  return `${usingBlock}namespace ${ns}.Application.Features.${singularName}.DTOs;
+  return `${usingBlock}namespace ${dtoNs};
 
 public sealed record ${singularName}Dto
 {
@@ -289,9 +280,16 @@ ${lines.join('\n\n')}
 /**
  * @param {object} config
  */
-function renderMappings(config) {
+export function renderMappings(config) {
   const { singularName, pluralName } = config.feature;
   const ns = config.projectName;
+  const isServices = isServicesArchitecture(config.architecture);
+  const dtoNs = isServices
+    ? `${ns}.Application.Modules.${pluralName}.DTOs`
+    : `${ns}.Application.Features.${singularName}.DTOs`;
+  const mappingNs = isServices
+    ? `${ns}.Application.Modules.${pluralName}.Mapping`
+    : `${ns}.Application.Features.${singularName}.Mapping`;
   const groups = groupFields(config.fields);
 
   /** @type {string[]} */
@@ -332,7 +330,7 @@ function renderMappings(config) {
 
   const usings = [
     `using ${ns}.Domain.Entities;`,
-    `using ${ns}.Application.Features.${singularName}.DTOs;`,
+    `using ${dtoNs};`,
   ];
   if (usesLookupModels(config)) {
     usings.push(`using ${ns}.Application.Common.Models;`);
@@ -340,7 +338,7 @@ function renderMappings(config) {
 
   return `${usings.join('\n')}
 
-namespace ${ns}.Application.Features.${singularName}.Mapping;
+namespace ${mappingNs};
 
 public static class ${singularName}Mappings
 {
@@ -655,7 +653,7 @@ public sealed class Get${singularName}ByIdQueryHandler
 /**
  * @param {ReturnType<typeof groupFields>} groups
  */
-function commandPropertyLines(groups) {
+export function commandPropertyLines(groups) {
   /** @type {string[]} */
   const lines = [];
 
@@ -691,13 +689,7 @@ function commandPropertyLines(groups) {
   return lines;
 }
 
-/**
- * Foreign-key existence checks for to-one relationships and single media.
- * @param {object} config
- * @param {ReturnType<typeof groupFields>} groups
- * @param {string} dtoType
- */
-function fkValidationBlocks(config, groups, dtoType) {
+export function fkValidationBlocks(config, groups, dtoType) {
   /** @type {string[]} */
   const blocks = [];
 
@@ -749,14 +741,7 @@ function fkValidationBlocks(config, groups, dtoType) {
   return blocks;
 }
 
-/**
- * Loads to-many and multi-media collections into local variables and validates
- * that every referenced id exists.
- * @param {ReturnType<typeof groupFields>} groups
- * @param {string} dtoType
- * @returns {{ blocks: string[], vars: { field: object, varName: string, kind: string }[] }}
- */
-function collectionLoadBlocks(groups, dtoType) {
+export function collectionLoadBlocks(groups, dtoType) {
   /** @type {string[]} */
   const blocks = [];
   /** @type {{ field: object, varName: string, kind: string }[]} */
@@ -1060,7 +1045,7 @@ ${assignmentSection}
  * @param {object} field
  * @param {string} requestParam
  */
-function validationRulesForField(field, requestParam = 'command') {
+export function validationRulesForField(field, requestParam = 'command') {
   const rules = [];
 
   if (field.kind === 'enum') {
@@ -1162,7 +1147,7 @@ function formatNumericLiteral(field, value) {
 /**
  * @param {object} config
  */
-function renderFieldValidators(config) {
+export function renderFieldValidators(config) {
   return config.fields
     .map((field) => validationRulesForField(field))
     .filter(Boolean)
@@ -1370,6 +1355,6 @@ public sealed class Restore${singularName}CommandHandler
  * Join non-empty sections with a blank line between them.
  * @param {string[]} sections
  */
-function joinSections(sections) {
+export function joinSections(sections) {
   return sections.filter((section) => section && section.trim()).join('\n\n');
 }

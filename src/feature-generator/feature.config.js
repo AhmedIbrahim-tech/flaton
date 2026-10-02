@@ -7,6 +7,7 @@ import {
   resolveBackendArchitecture,
   resolveBackendDatabase,
   resolveBackendOrm,
+  resolveBackendPresentation,
 } from './backend/architecture.js';
 import {
   resolveBackendAuthentication,
@@ -85,6 +86,10 @@ export function buildFeatureConfig(input) {
     architecture: input.architecture,
     manifest,
   });
+  const presentation = resolveBackendPresentation({
+    presentation: input.presentation,
+    manifest,
+  });
   const orm = resolveBackendOrm({
     orm: input.orm,
     manifest,
@@ -128,6 +133,7 @@ export function buildFeatureConfig(input) {
     labels,
     featureType,
     paths,
+    presentation,
     architecture,
     orm,
     database,
@@ -136,6 +142,7 @@ export function buildFeatureConfig(input) {
     permissions,
     backend: {
       enabled: backendEnabled,
+      presentation,
       architecture,
       orm,
       database,

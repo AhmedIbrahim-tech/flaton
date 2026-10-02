@@ -168,6 +168,16 @@ function insertMiddleware(contents, applied, skipped) {
     return contents;
   }
 
+  // If UseAuthorization already exists (e.g. in MVC / Razor Pages templates), insert UseAuthentication right before it.
+  const authzAnchor = /^([ \t]*)app\.UseAuthorization\(\);[ \t]*$/m;
+  const authzMatch = contents.match(authzAnchor);
+  if (authzMatch) {
+    const indent = authzMatch[1] ?? '';
+    const replacement = `${indent}app.UseAuthentication();\n${authzMatch[0]}`;
+    applied.push('app.UseAuthentication();');
+    return contents.replace(authzMatch[0], replacement);
+  }
+
   const mapControllersAnchor = /^([ \t]*)app\.MapControllers\(\);[ \t]*$/m;
   const match = contents.match(mapControllersAnchor);
   if (match) {
@@ -176,6 +186,23 @@ function insertMiddleware(contents, applied, skipped) {
     const replacement = `${middleware}\n${match[0]}`;
     applied.push('app.UseAuthentication(); app.UseAuthorization();');
     return contents.replace(match[0], replacement);
+  }
+
+  const routeAnchors = [
+    /^([ \t]*)app\.MapControllerRoute\([^;]*\);[ \t]*$/m,
+    /^([ \t]*)app\.MapRazorPages\(\);[ \t]*$/m,
+    /^([ \t]*)app\.MapHealthChecks\([^;]*\);[ \t]*$/m,
+  ];
+
+  for (const anchor of routeAnchors) {
+    const rMatch = contents.match(anchor);
+    if (rMatch) {
+      const indent = rMatch[1] ?? '';
+      const middleware = `${indent}app.UseAuthentication();\n${indent}app.UseAuthorization();`;
+      const replacement = `${middleware}\n${rMatch[0]}`;
+      applied.push('app.UseAuthentication(); app.UseAuthorization();');
+      return contents.replace(rMatch[0], replacement);
+    }
   }
 
   // Fallback: before app.Run().

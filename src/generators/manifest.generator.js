@@ -49,10 +49,11 @@ export async function writeGenerationManifest(options) {
     backend: backend.enabled
       ? {
           enabled: true,
-          architecture: backend.architecture ?? 'cqrs-mediatr',
-          orm: backend.orm ?? 'efcore',
-          database: backend.database ?? 'sqlserver',
-          mapping: backend.mapping ?? 'manual',
+          presentation: backend.presentation ?? options.presentation ?? 'controllers',
+          architecture: backend.architecture ?? options.architecture ?? 'cqrs-mediatr',
+          orm: backend.orm ?? options.orm ?? 'efcore',
+          database: backend.database ?? options.database ?? (options.sqlServer === false ? 'sqlite' : 'sqlserver'),
+          mapping: backend.mapping ?? options.mapping ?? 'manual',
           authentication: backend.authentication ?? 'identity-jwt',
           realtime: backend.realtime ?? 'none',
           logging: backend.logging ?? 'serilog',
@@ -60,6 +61,7 @@ export async function writeGenerationManifest(options) {
         }
       : {
           enabled: false,
+          presentation: null,
           architecture: null,
           orm: null,
           database: null,

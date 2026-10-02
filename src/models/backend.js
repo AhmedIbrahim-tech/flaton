@@ -1,3 +1,4 @@
+export const BACKEND_PRESENTATIONS = /** @type {const} */ (['controllers', 'minimal-api', 'mvc', 'razor-pages']);
 export const BACKEND_ARCHITECTURES = /** @type {const} */ (['cqrs-mediatr', 'services']);
 export const BACKEND_MAPPINGS = /** @type {const} */ (['manual', 'automapper']);
 export const BACKEND_ORMS = /** @type {const} */ (['efcore', 'dapper', 'efcore-dapper']);
@@ -5,11 +6,12 @@ export const BACKEND_DATABASES = /** @type {const} */ (['sqlserver', 'postgresql
 export const BACKEND_LOGGINGS = /** @type {const} */ (['serilog', 'ilogger']);
 export const BACKEND_BACKGROUND_JOBS = /** @type {const} */ (['none', 'hangfire']);
 export const BACKEND_REALTIMES = /** @type {const} */ (['none', 'signalr']);
-export const BACKEND_AUTHENTICATIONS = /** @type {const} */ (['identity-jwt', 'identity', 'none']);
+export const BACKEND_AUTHENTICATIONS = /** @type {const} */ (['identity-jwt', 'identity', 'identity-cookie', 'identity-cookies', 'none']);
 
 /**
  * @typedef {object} BackendSelection
  * @property {boolean} enabled
+ * @property {'controllers' | 'minimal-api' | 'mvc' | 'razor-pages'} [presentation]
  * @property {'cqrs-mediatr' | 'services'} [architecture]
  * @property {'manual' | 'automapper'} [mapping]
  * @property {'efcore' | 'dapper' | 'efcore-dapper'} [orm]
@@ -17,7 +19,7 @@ export const BACKEND_AUTHENTICATIONS = /** @type {const} */ (['identity-jwt', 'i
  * @property {'serilog' | 'ilogger'} [logging]
  * @property {'none' | 'hangfire'} [backgroundJobs]
  * @property {'none' | 'signalr'} [realtime]
- * @property {'identity-jwt' | 'identity' | 'none'} [authentication]
+ * @property {'identity-jwt' | 'identity' | 'identity-cookie' | 'identity-cookies' | 'none'} [authentication]
  */
 
 /**
@@ -27,6 +29,7 @@ export const BACKEND_AUTHENTICATIONS = /** @type {const} */ (['identity-jwt', 'i
 export function defaultBackendSelection() {
   return {
     enabled: true,
+    presentation: 'controllers',
     architecture: 'cqrs-mediatr',
     mapping: 'manual',
     orm: 'efcore',
@@ -38,7 +41,7 @@ export function defaultBackendSelection() {
   };
 }
 
-const IDENTITY_AUTHENTICATIONS = new Set(['identity-jwt', 'identity']);
+const IDENTITY_AUTHENTICATIONS = new Set(['identity-jwt', 'identity', 'identity-cookie', 'identity-cookies']);
 
 /**
  * ASP.NET Identity stores (users, roles, claims) require EF Core.
@@ -60,15 +63,22 @@ export function shouldGenerateIdentityArtifacts(authentication) {
 
 /**
  * Rejects backend option combinations that cannot generate a valid app.
- * @param {{ orm?: string, authentication?: string }} [backend]
+ * @param {{ presentation?: string, orm?: string, authentication?: string }} [backend]
  */
 export function assertBackendCompatibility(backend = {}) {
+  const presentation = backend.presentation ?? 'controllers';
   const orm = backend.orm ?? 'efcore';
   const authentication = backend.authentication ?? 'none';
 
   if (orm === 'dapper' && identityRequiresEfCore(authentication)) {
     throw new Error(
       'Dapper-only cannot be combined with ASP.NET Identity. Identity requires EF Core. Use --orm efcore or --orm efcore-dapper, or set --auth-mode none.',
+    );
+  }
+
+  if ((presentation === 'mvc' || presentation === 'razor-pages') && authentication === 'identity-jwt') {
+    throw new Error(
+      'MVC and Razor Pages support cookie authentication (Identity + Cookies), not JWT-only.',
     );
   }
 }
@@ -81,7 +91,17 @@ export function describeBackend(backend) {
     return 'None';
   }
 
-  const parts = ['ASP.NET Core Web API', 'Clean Architecture'];
+  const presentation = backend.presentation ?? 'controllers';
+  let presentationName = 'ASP.NET Core Web API';
+  if (presentation === 'minimal-api') {
+    presentationName = 'ASP.NET Core Minimal API';
+  } else if (presentation === 'mvc') {
+    presentationName = 'ASP.NET Core MVC';
+  } else if (presentation === 'razor-pages') {
+    presentationName = 'ASP.NET Core Razor Pages';
+  }
+
+  const parts = [presentationName, 'Clean Architecture'];
 
   if (backend.architecture === 'cqrs-mediatr') {
     parts.push('CQRS + MediatR');
@@ -107,8 +127,8 @@ export function describeBackend(backend) {
 
   if (backend.authentication === 'identity-jwt') {
     parts.push('Identity + JWT');
-  } else if (backend.authentication === 'identity') {
-    parts.push('Identity (Cookie/Local)');
+  } else if (backend.authentication === 'identity' || backend.authentication === 'identity-cookie') {
+    parts.push('Identity + Cookies');
   }
 
   if (backend.logging === 'serilog') {
@@ -127,3 +147,4 @@ export function describeBackend(backend) {
 
   return parts.join(' | ');
 }
+

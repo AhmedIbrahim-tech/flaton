@@ -3,6 +3,7 @@ import { resolveOptions } from './cli/prompts.js';
 import { generateProject } from './generators/project.generator.js';
 import { GenerationError } from './utils/errors.js';
 import { logger } from './utils/logger.js';
+import { handleCliCancellation } from './utils/cli-cancellation.js';
 
 async function main() {
   try {
@@ -19,8 +20,16 @@ async function main() {
     }
 
     const options = await resolveOptions(parsed);
+    if (!options) {
+      logger.info('Project generation cancelled.');
+      return;
+    }
+
     await generateProject(options);
   } catch (error) {
+    if (handleCliCancellation(error, 'Project generation cancelled.')) {
+      return;
+    }
     if (error instanceof GenerationError) {
       logger.error('Generation failed.');
       logger.error(`Step: ${error.step}`);

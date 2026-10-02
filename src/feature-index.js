@@ -15,6 +15,7 @@ import {
 } from './feature-generator/utils/manifest.js';
 import { GenerationError } from './utils/errors.js';
 import { logger } from './utils/logger.js';
+import { handleCliCancellation } from './utils/cli-cancellation.js';
 
 async function main() {
   try {
@@ -67,11 +68,18 @@ async function main() {
       project,
       project.existingFeatures,
     );
+    if (!resolved) {
+      logger.info('Feature generation cancelled.');
+      return;
+    }
     await generateFeature({
       ...resolved,
       projectRoot,
     });
   } catch (error) {
+    if (handleCliCancellation(error, 'Feature generation cancelled.')) {
+      return;
+    }
     if (error instanceof GenerationError) {
       logger.error('Feature generation failed.');
       logger.error(`Step: ${error.step}`);

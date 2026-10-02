@@ -219,30 +219,13 @@ function renderServiceController(config) {
   const usings = [
     'using Microsoft.AspNetCore.Mvc;',
     `using ${ns}.API.Contracts;`,
-    `using ${ns}.Application.Features.${applicationFeatureName(config)}.Interfaces;`,
+    `using ${ns}.Application.Modules.${pluralName}.DTOs;`,
+    `using ${ns}.Application.Modules.${pluralName}.Interfaces;`,
     ...authorizationUsings(config),
   ];
 
-  if (ops.search) {
-    usings.push(`using ${ns}.Application.Features.${applicationFeatureName(config)}.Queries.Search;`);
-  }
-  if (canBeLookupTarget(config)) {
-    usings.push(`using ${ns}.Application.Features.${applicationFeatureName(config)}.Queries.Lookup;`);
-  }
-  if (ops.getById) {
-    usings.push(`using ${ns}.Application.Features.${applicationFeatureName(config)}.Queries.GetById;`);
-  }
-  if (ops.create) {
-    usings.push(`using ${ns}.Application.Features.${applicationFeatureName(config)}.Commands.Create;`);
-  }
-  if (ops.update) {
-    usings.push(`using ${ns}.Application.Features.${applicationFeatureName(config)}.Commands.Update;`);
-  }
-  if (ops.delete) {
-    usings.push(`using ${ns}.Application.Features.${applicationFeatureName(config)}.Commands.Delete;`);
-  }
-  if (ops.restore) {
-    usings.push(`using ${ns}.Application.Features.${applicationFeatureName(config)}.Commands.Restore;`);
+  if (ops.search || canBeLookupTarget(config)) {
+    usings.push(`using ${ns}.Application.Common.Models;`);
   }
 
   /** @type {string[]} */
@@ -251,10 +234,10 @@ function renderServiceController(config) {
   if (ops.search) {
     actions.push(`${methodPermissionAttribute(config, 'View')}    [HttpPost(Router.${pluralName}.Search)]
     public async Task<IActionResult> Search(
-        [FromBody] Search${pluralName}Query query,
+        [FromBody] Search${pluralName}Dto request,
         CancellationToken cancellationToken)
     {
-        var result = await _service.SearchAsync(query, cancellationToken);
+        var result = await _service.SearchAsync(request, cancellationToken);
         return ToActionResult(result);
     }`);
   }
@@ -266,8 +249,7 @@ function renderServiceController(config) {
         [FromQuery] int take,
         CancellationToken cancellationToken)
     {
-        var query = new Lookup${pluralName}Query(search, take <= 0 ? 50 : take);
-        var result = await _service.LookupAsync(query, cancellationToken);
+        var result = await _service.LookupAsync(search, take <= 0 ? 50 : take, cancellationToken);
         return ToActionResult(result);
     }`);
   }
@@ -278,7 +260,7 @@ function renderServiceController(config) {
         Guid id,
         CancellationToken cancellationToken)
     {
-        var result = await _service.GetByIdAsync(new Get${singularName}ByIdQuery(id), cancellationToken);
+        var result = await _service.GetByIdAsync(id, cancellationToken);
         return ToActionResult(result);
     }`);
   }
@@ -286,10 +268,10 @@ function renderServiceController(config) {
   if (ops.create) {
     actions.push(`${methodPermissionAttribute(config, 'Create')}    [HttpPost(Router.${pluralName}.Create)]
     public async Task<IActionResult> Create(
-        [FromBody] Create${singularName}Command command,
+        [FromBody] Create${singularName}Dto request,
         CancellationToken cancellationToken)
     {
-        var result = await _service.CreateAsync(command, cancellationToken);
+        var result = await _service.CreateAsync(request, cancellationToken);
         return ToCreatedResult(result);
     }`);
   }
@@ -298,10 +280,10 @@ function renderServiceController(config) {
     actions.push(`${methodPermissionAttribute(config, 'Update')}    [HttpPut(Router.${pluralName}.Update)]
     public async Task<IActionResult> Update(
         Guid id,
-        [FromBody] Update${singularName}Command command,
+        [FromBody] Update${singularName}Dto request,
         CancellationToken cancellationToken)
     {
-        var result = await _service.UpdateAsync(command with { Id = id }, cancellationToken);
+        var result = await _service.UpdateAsync(id, request, cancellationToken);
         return ToActionResult(result);
     }`);
   }
@@ -312,7 +294,7 @@ function renderServiceController(config) {
         Guid id,
         CancellationToken cancellationToken)
     {
-        var result = await _service.DeleteAsync(new Delete${singularName}Command(id), cancellationToken);
+        var result = await _service.DeleteAsync(id, cancellationToken);
         return ToActionResult(result);
     }`);
   }
@@ -323,21 +305,21 @@ function renderServiceController(config) {
         Guid id,
         CancellationToken cancellationToken)
     {
-        var result = await _service.RestoreAsync(new Restore${singularName}Command(id), cancellationToken);
+        var result = await _service.RestoreAsync(id, cancellationToken);
         return ToActionResult(result);
     }`);
   }
 
-  return `${usings.join('\n')}
+  return `${[...new Set(usings)].join('\n')}
 
 namespace ${ns}.API.Controllers;
 
 [ApiController]
 ${controllerAuthorizationAttribute(config)}public sealed class ${pluralName}Controller : ApiControllerBase
 {
-    private readonly I${pluralName}Service _service;
+    private readonly I${singularName}Service _service;
 
-    public ${pluralName}Controller(I${pluralName}Service service)
+    public ${pluralName}Controller(I${singularName}Service service)
     {
         _service = service;
     }
@@ -346,3 +328,4 @@ ${actions.join('\n\n')}
 }
 `;
 }
+

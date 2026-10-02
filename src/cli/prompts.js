@@ -67,7 +67,7 @@ export async function resolveOptions(parsed) {
       });
 
       if (continueWithRecommended === 'customize') {
-        backend = backendEnabled ? await resolveCustomBackend(parsed) : null;
+        backend = backendEnabled ? await resolveCustomBackend(parsed, mode, savedPreferences) : null;
         frontend = frontendEnabled ? await resolveCustomFrontend(parsed, targetFrontend) : { enabled: false };
       } else {
         backend = backendEnabled ? defaultBackendSelection() : null;
@@ -78,15 +78,16 @@ export async function resolveOptions(parsed) {
       frontend = frontendEnabled ? targetFrontend : { enabled: false };
     }
   } else if (preferencesAction === 'use-saved' && savedPreferences) {
+    const savedPresentation = mode === 'fullstack' ? 'controllers' : (savedPreferences.backend?.presentation ?? 'controllers');
     backend = backendEnabled
-      ? { ...defaultBackendSelection(), ...(savedPreferences.backend ?? {}) }
+      ? { ...defaultBackendSelection(), ...(savedPreferences.backend ?? {}), presentation: savedPresentation }
       : null;
     frontend = frontendEnabled
       ? { ...defaultFrontendSelection(), ...(savedPreferences.frontend ?? {}) }
       : { enabled: false };
   } else {
     // Customization Mode
-    backend = backendEnabled ? await resolveCustomBackend(parsed) : null;
+    backend = backendEnabled ? await resolveCustomBackend(parsed, mode, savedPreferences) : null;
     frontend = frontendEnabled ? await resolveCustomFrontend(parsed) : { enabled: false };
   }
 
@@ -142,11 +143,7 @@ export async function resolveOptions(parsed) {
     });
 
     if (!generateConfirmed) {
-      throw new GenerationError('Generation cancelled by user.', {
-        step: 'Confirm generation summary',
-        command: '(none)',
-        targetDirectory: parsed.output,
-      });
+      return null;
     }
   }
 
@@ -207,8 +204,8 @@ async function resolveSetupMode(parsed, preferencesAction, savedPreferences) {
   return select({
     message: 'Setup Mode:',
     choices: [
-      { name: '1. Recommended Defaults (Production-ready starting point)', value: 'recommended' },
-      { name: '2. Customize (Configure architecture, data access, styling, state, etc.)', value: 'customize' },
+      { name: 'Recommended Defaults', value: 'recommended' },
+      { name: 'Customize', value: 'customize' },
     ],
   });
 }
@@ -255,11 +252,16 @@ async function resolveReactFramework(parsed) {
 
 /**
  * @param {Record<string, unknown>} parsed
+ * @param {string} [mode]
+ * @param {object | null} [savedPreferences]
  */
-async function resolveCustomBackend(parsed) {
+async function resolveCustomBackend(parsed, mode = 'backend-only', savedPreferences = null) {
   if (parsed.yes) {
     return {
       enabled: true,
+      presentation: mode === 'fullstack'
+        ? 'controllers'
+        : (parsed.presentation ?? DEFAULT_OPTIONS.presentation),
       architecture: parsed.architecture ?? DEFAULT_OPTIONS.architecture,
       mapping: parsed.mapping ?? DEFAULT_OPTIONS.mapping,
       orm: parsed.orm ?? DEFAULT_OPTIONS.orm,
@@ -271,28 +273,41 @@ async function resolveCustomBackend(parsed) {
     };
   }
 
+  const presentation = mode === 'fullstack'
+    ? 'controllers'
+    : (parsed.presentation ?? (await select({
+        message: 'Backend Type:',
+        choices: [
+          { name: 'Web API (Controllers)', value: 'controllers' },
+          { name: 'Minimal API', value: 'minimal-api' },
+          { name: 'MVC', value: 'mvc' },
+          { name: 'Razor Pages', value: 'razor-pages' },
+        ],
+        default: savedPreferences?.backend?.presentation ?? 'controllers',
+      })));
+
   const architecture = parsed.architecture ?? (await select({
     message: 'Application Architecture:',
     choices: [
-      { name: 'CQRS + MediatR (Command/Query separation with pipeline behaviors)', value: 'cqrs-mediatr' },
-      { name: 'Application Services (Direct service interfaces and implementations)', value: 'services' },
+      { name: 'CQRS + MediatR', value: 'cqrs-mediatr' },
+      { name: 'Application Services', value: 'services' },
     ],
   }));
 
   const mapping = parsed.mapping ?? (await select({
     message: 'Mapping:',
     choices: [
-      { name: 'Manual Mapping (Clean extension methods & zero runtime overhead)', value: 'manual' },
-      { name: 'AutoMapper (Convention-based profile mapping)', value: 'automapper' },
+      { name: 'Manual Mapping', value: 'manual' },
+      { name: 'AutoMapper', value: 'automapper' },
     ],
   }));
 
   const orm = parsed.orm ?? (await select({
     message: 'Data Access:',
     choices: [
-      { name: 'Entity Framework Core (Full ORM with migrations & interceptors)', value: 'efcore' },
-      { name: 'Dapper (Lightweight micro-ORM with high-performance SQL)', value: 'dapper' },
-      { name: 'EF Core + Dapper (EF Core for writes/migrations, Dapper for high-speed queries)', value: 'efcore-dapper' },
+      { name: 'Entity Framework Core', value: 'efcore' },
+      { name: 'Dapper', value: 'dapper' },
+      { name: 'EF Core + Dapper (EF for writes, Dapper for reads)', value: 'efcore-dapper' },
     ],
   }));
 
@@ -308,8 +323,8 @@ async function resolveCustomBackend(parsed) {
   const logging = parsed.logging ?? (await select({
     message: 'Logging:',
     choices: [
-      { name: 'Serilog (Structured logging with console/file sinks)', value: 'serilog' },
-      { name: 'Built-in ILogger (Standard Microsoft.Extensions.Logging)', value: 'ilogger' },
+      { name: 'Serilog', value: 'serilog' },
+      { name: 'Built-in ILogger', value: 'ilogger' },
     ],
   }));
 
@@ -317,7 +332,7 @@ async function resolveCustomBackend(parsed) {
     message: 'Background Jobs:',
     choices: [
       { name: 'None', value: 'none' },
-      { name: 'Hangfire (Persistent background job processing & dashboard)', value: 'hangfire' },
+      { name: 'Hangfire', value: 'hangfire' },
     ],
   }));
 
@@ -325,25 +340,36 @@ async function resolveCustomBackend(parsed) {
     message: 'Real Time Communication:',
     choices: [
       { name: 'None', value: 'none' },
-      { name: 'SignalR (WebSockets & real-time communication hubs)', value: 'signalr' },
+      { name: 'SignalR', value: 'signalr' },
     ],
   }));
 
+  let authChoices;
+  if (orm === 'dapper') {
+    authChoices = [
+      { name: 'None', value: 'none' },
+    ];
+  } else if (presentation === 'mvc' || presentation === 'razor-pages') {
+    authChoices = [
+      { name: 'Identity + Cookies', value: 'identity' },
+      { name: 'None', value: 'none' },
+    ];
+  } else {
+    authChoices = [
+      { name: 'Identity + JWT', value: 'identity-jwt' },
+      { name: 'Identity + Cookies', value: 'identity' },
+      { name: 'None', value: 'none' },
+    ];
+  }
+
   const authentication = parsed.authMode ?? (await select({
     message: 'Authentication:',
-    choices: orm === 'dapper'
-      ? [
-          { name: 'None (ASP.NET Identity requires EF Core; use EF Core or EF Core + Dapper)', value: 'none' },
-        ]
-      : [
-          { name: 'ASP.NET Core Identity + JWT (Full auth tokens, roles & refresh cookies)', value: 'identity-jwt' },
-          { name: 'ASP.NET Core Identity (Identity cookie & password management only)', value: 'identity' },
-          { name: 'None (Public API without authentication foundation)', value: 'none' },
-        ],
+    choices: authChoices,
   }));
 
   return {
     enabled: true,
+    presentation,
     architecture,
     mapping,
     orm,
@@ -413,25 +439,25 @@ async function resolveCustomFrontend(parsed, baseFrontend) {
   const state = parsed.state ?? (await select({
     message: 'State Management:',
     choices: [
-      { name: 'Redux Toolkit (Predictable global state with slices)', value: 'redux' },
-      { name: 'Zustand (Lightweight bearbones state management)', value: 'zustand' },
-      { name: 'None (React standard useState/useContext)', value: 'none' },
+      { name: 'Redux Toolkit', value: 'redux' },
+      { name: 'Zustand', value: 'zustand' },
+      { name: 'None', value: 'none' },
     ],
   }));
 
   const httpClient = parsed.httpClient ?? (await select({
     message: 'HTTP Client:',
     choices: [
-      { name: 'Axios (Feature-rich promise-based HTTP client)', value: 'axios' },
-      { name: 'Fetch (Native browser Fetch API with clean wrapper)', value: 'fetch' },
+      { name: 'Axios', value: 'axios' },
+      { name: 'Fetch', value: 'fetch' },
     ],
   }));
 
   const forms = parsed.forms ?? (await select({
     message: 'Forms:',
     choices: [
-      { name: 'React Hook Form + Zod (Performant forms with type-safe schema validation)', value: 'react-hook-form-zod' },
-      { name: 'None (Native React form handling)', value: 'none' },
+      { name: 'React Hook Form + Zod', value: 'react-hook-form-zod' },
+      { name: 'None', value: 'none' },
     ],
   }));
 
@@ -451,7 +477,7 @@ async function resolveCustomFrontend(parsed, baseFrontend) {
   ];
 
   if (styling === 'tailwind') {
-    componentChoices.unshift({ name: 'shadcn/ui (Tailwind-native customizable UI components)', value: 'shadcn' });
+    componentChoices.unshift({ name: 'shadcn/ui', value: 'shadcn' });
   }
 
   const componentSystem = parsed.componentSystem ?? (await select({

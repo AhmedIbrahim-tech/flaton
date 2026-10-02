@@ -127,7 +127,7 @@ export async function resolveFeatureOptions(parsed, project, existingFeatures = 
       default: true,
     });
     if (!proceed) {
-      throw new Error('Feature generation cancelled.');
+      return null;
     }
   }
 

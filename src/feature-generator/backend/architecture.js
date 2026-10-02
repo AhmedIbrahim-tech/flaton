@@ -21,6 +21,37 @@ export function isServicesArchitecture(architecture) {
 }
 
 /**
+ * @param {{ presentation?: string, manifest?: { backend?: { presentation?: string } } }} [input]
+ * @returns {'controllers' | 'minimal-api' | 'mvc' | 'razor-pages'}
+ */
+export function resolveBackendPresentation(input = {}) {
+  const value =
+    input.presentation
+    ?? input.manifest?.backend?.presentation
+    ?? 'controllers';
+  if (['controllers', 'minimal-api', 'mvc', 'razor-pages'].includes(value)) {
+    return value;
+  }
+  return 'controllers';
+}
+
+export function isControllers(presentation) {
+  return presentation === 'controllers' || !presentation;
+}
+
+export function isMinimalApi(presentation) {
+  return presentation === 'minimal-api';
+}
+
+export function isMvc(presentation) {
+  return presentation === 'mvc';
+}
+
+export function isRazorPages(presentation) {
+  return presentation === 'razor-pages';
+}
+
+/**
  * @param {{ orm?: string, manifest?: { backend?: { orm?: string } } }} [input]
  * @returns {'efcore' | 'dapper' | 'efcore-dapper'}
  */

@@ -181,10 +181,10 @@ test('feature generator plans Application Services Category types', () => {
   const paths = files.map((file) => posix(file.relativePath));
   const joined = files.map((file) => file.contents).join('\n');
 
-  assert.ok(paths.some((item) => item.endsWith('ICategoriesService.cs')));
-  assert.ok(paths.some((item) => item.endsWith('CategoriesService.cs')));
+  assert.ok(paths.some((item) => item.endsWith('ICategoryService.cs')));
+  assert.ok(paths.some((item) => item.endsWith('CategoryService.cs')));
   assert.ok(paths.some((item) => item.endsWith('CategoriesController.cs')));
-  assert.match(joined, /ICategoriesService/);
+  assert.match(joined, /ICategoryService/);
   assert.doesNotMatch(joined, /IRequestHandler/);
 });
 

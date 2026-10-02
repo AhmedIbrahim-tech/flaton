@@ -69,6 +69,7 @@ export function parseArguments(argv) {
     saveDefaults: undefined,
     packageManager: undefined,
     backend: undefined,
+    presentation: undefined,
     architecture: undefined,
     mapping: undefined,
     orm: undefined,
@@ -151,6 +152,16 @@ export function parseArguments(argv) {
         throw new Error(`Unsupported setup mode "${value}". Use recommended or customize.`);
       }
       options.setupMode = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--presentation' || arg === '--backend-type') {
+      const value = requireValue(args, index, arg).toLowerCase();
+      if (!['controllers', 'minimal-api', 'mvc', 'razor-pages'].includes(value)) {
+        throw new Error(`Unsupported backend type "${value}". Use controllers, minimal-api, mvc, or razor-pages.`);
+      }
+      options.presentation = value;
       index += 1;
       continue;
     }
@@ -346,6 +357,7 @@ Setup & Preferences:
 
 Backend Options:
   --backend / --no-backend           Include ASP.NET Core Clean Architecture backend
+  --presentation controllers|minimal-api|mvc|razor-pages Backend presentation type
   --architecture cqrs-mediatr|services CQRS + MediatR or Application Services
   --mapping manual|automapper        Manual mapping extensions or AutoMapper
   --orm efcore|dapper|efcore-dapper  Entity Framework Core, Dapper, or both
@@ -393,6 +405,7 @@ export const DEFAULT_OPTIONS = {
   mode: 'fullstack',
   setupMode: 'recommended',
   backend: true,
+  presentation: 'controllers',
   frontendEnabled: true,
   architecture: 'cqrs-mediatr',
   mapping: 'manual',

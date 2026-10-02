@@ -1,6 +1,5 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { confirm } from '@inquirer/prompts';
 import {
   MODULES,
   MODULE_GENERATOR_VERSION,
@@ -387,12 +386,27 @@ async function patchIdentityDbContext(projectRoot, projectName, manifest) {
  */
 async function patchProgramCs(projectRoot, manifest) {
   const backendDir = getBackendDirectory(projectRoot, manifest) ?? projectRoot;
-  const programPath = path.join(backendDir, 'API', 'Program.cs');
+  const presentation = manifest?.backend?.presentation ?? 'controllers';
+  const isWeb = presentation === 'mvc' || presentation === 'razor-pages';
+  const presentationFolder = isWeb ? 'Web' : 'API';
+  const programPath = path.join(backendDir, presentationFolder, 'Program.cs');
   if (!(await pathExists(programPath))) {
     return;
   }
   const existing = await fs.readFile(programPath, 'utf8');
   const result = patchProgramForAuth(existing);
+  if (presentation === 'minimal-api') {
+    const projectName = manifest?.displayName ?? manifest?.name ?? 'App';
+    const authEndpointsUsing = `using ${projectName}.API.Endpoints.Authentication;`;
+    if (!result.contents.includes(authEndpointsUsing)) {
+      result.contents = `${authEndpointsUsing}\n${result.contents}`;
+      result.changed = true;
+    }
+    if (!result.contents.includes('MapAuthenticationEndpoints()')) {
+      result.contents = result.contents.replace(/app\.Run\(\);/, 'app.MapAuthenticationEndpoints();\napp.Run();');
+      result.changed = true;
+    }
+  }
   if (result.changed) {
     await writeFile(programPath, result.contents);
     logger.success(`Program.cs patched (${result.applied.join(', ')})`);
@@ -406,8 +420,11 @@ async function patchProgramCs(projectRoot, manifest) {
  */
 async function mergeAuthAppsettings(projectRoot, frontendStrategy, manifest) {
   const backendDir = getBackendDirectory(projectRoot, manifest) ?? projectRoot;
-  const appsettingsPath = path.join(backendDir, 'API', 'appsettings.json');
-  const devPath = path.join(backendDir, 'API', 'appsettings.Development.json');
+  const presentation = manifest?.backend?.presentation ?? 'controllers';
+  const isWeb = presentation === 'mvc' || presentation === 'razor-pages';
+  const presentationFolder = isWeb ? 'Web' : 'API';
+  const appsettingsPath = path.join(backendDir, presentationFolder, 'appsettings.json');
+  const devPath = path.join(backendDir, presentationFolder, 'appsettings.Development.json');
 
   if (await pathExists(appsettingsPath)) {
     const current = JSON.parse(await fs.readFile(appsettingsPath, 'utf8'));
@@ -468,8 +485,13 @@ function defaultOrigin(frontendStrategy) {
  */
 async function ensureAuthPackages(projectRoot, manifest) {
   const backendDir = getBackendDirectory(projectRoot, manifest) ?? projectRoot;
+  const presentation = manifest?.backend?.presentation ?? 'controllers';
+  const isWeb = presentation === 'mvc' || presentation === 'razor-pages';
+  const presentationFolder = isWeb ? 'Web' : 'API';
+  const authMode = manifest?.backend?.authentication ?? 'identity-jwt';
+  const isJwt = authMode === 'identity-jwt';
   const infraCsproj = path.join(backendDir, 'Infrastructure', 'Infrastructure.csproj');
-  const apiCsproj = path.join(backendDir, 'API', 'API.csproj');
+  const presentationCsproj = path.join(backendDir, presentationFolder, `${presentationFolder}.csproj`);
   const appCsproj = path.join(backendDir, 'Application', 'Application.csproj');
 
   const packages = [
@@ -477,14 +499,17 @@ async function ensureAuthPackages(projectRoot, manifest) {
       project: infraCsproj,
       packages: [
         'Microsoft.AspNetCore.Identity.EntityFrameworkCore',
-        'Microsoft.AspNetCore.Authentication.JwtBearer',
-        'System.IdentityModel.Tokens.Jwt',
+        ...(isJwt ? ['Microsoft.AspNetCore.Authentication.JwtBearer', 'System.IdentityModel.Tokens.Jwt'] : []),
       ],
     },
-    {
-      project: apiCsproj,
-      packages: ['Microsoft.AspNetCore.Authentication.JwtBearer'],
-    },
+    ...(isJwt && presentationFolder === 'API'
+      ? [
+          {
+            project: presentationCsproj,
+            packages: ['Microsoft.AspNetCore.Authentication.JwtBearer'],
+          },
+        ]
+      : []),
     {
       project: appCsproj,
       packages: ['Microsoft.AspNetCore.Authorization'],
@@ -522,7 +547,10 @@ async function ensureAuthPackages(projectRoot, manifest) {
  */
 async function ensureCorsAllowCredentials(projectRoot, frontendStrategy, manifest) {
   const backendDir = getBackendDirectory(projectRoot, manifest) ?? projectRoot;
-  const programPath = path.join(backendDir, 'API', 'Program.cs');
+  const presentation = manifest?.backend?.presentation ?? 'controllers';
+  const isWeb = presentation === 'mvc' || presentation === 'razor-pages';
+  const presentationFolder = isWeb ? 'Web' : 'API';
+  const programPath = path.join(backendDir, presentationFolder, 'Program.cs');
   if (!(await pathExists(programPath))) return;
   let contents = await fs.readFile(programPath, 'utf8');
   if (contents.includes('AllowCredentials()')) return;

@@ -52,6 +52,8 @@ export function toDtoListCall(config, listExpr) {
     : `${listExpr}.Select(${singular}Mappings.ToDto).ToList()`;
 }
 
+import { isServicesArchitecture } from './architecture.js';
+
 /**
  * @param {object} config
  */
@@ -59,6 +61,7 @@ export function renderAutoMapperProfile(config) {
   const { singularName, pluralName } = config.feature;
   const ns = config.projectName;
   const groups = groupFields(config.fields);
+  const isServices = isServicesArchitecture(config.architecture);
 
   /** @type {string[]} */
   const members = [];
@@ -89,25 +92,40 @@ export function renderAutoMapperProfile(config) {
     `            .ForMember(dto => dto.RowVersion, opt => opt.MapFrom(entity => Convert.ToBase64String(entity.RowVersion)))`,
   );
 
+  const dtoNamespace = isServices
+    ? `${ns}.Application.Modules.${pluralName}.DTOs`
+    : `${ns}.Application.Features.${singularName}.DTOs`;
+
+  const mappingNamespace = isServices
+    ? `${ns}.Application.Modules.${pluralName}.Mapping`
+    : `${ns}.Application.Features.${singularName}.Mapping`;
+
   const usings = [
     'using AutoMapper;',
     `using ${ns}.Domain.Entities;`,
-    `using ${ns}.Application.Features.${singularName}.DTOs;`,
+    `using ${dtoNamespace};`,
   ];
   if (groups.toMany.length > 0) {
     usings.push(`using ${ns}.Application.Common.Models;`);
   }
 
+  let extraMaps = '';
+  if (isServices) {
+    extraMaps = `
+        CreateMap<Create${singularName}Dto, ${entityClrName(config)}>();
+        CreateMap<Update${singularName}Dto, ${entityClrName(config)}>();`;
+  }
+
   return `${usings.join('\n')}
 
-namespace ${ns}.Application.Features.${singularName}.Mapping;
+namespace ${mappingNamespace};
 
 public sealed class ${singularName}MappingProfile : Profile
 {
     public ${singularName}MappingProfile()
     {
         CreateMap<${entityClrName(config)}, ${singularName}Dto>()
-${members.join('\n')};
+${members.join('\n')};${extraMaps}
     }
 }
 `;

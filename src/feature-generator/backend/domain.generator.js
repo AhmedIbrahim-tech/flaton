@@ -82,9 +82,11 @@ function renderEntity(config, groups) {
 
   const body = lines.join('\n\n');
 
-  return `${enumUsing}namespace ${ns}.Domain.Entities;
+  return `using ${ns}.Domain.Common;
+${enumUsing}
+namespace ${ns}.Domain.Entities;
 
-public sealed class ${singularName} : Common.BaseEntity
+public sealed class ${singularName} : BaseEntity
 {
 ${body}
 }

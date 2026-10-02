@@ -122,9 +122,11 @@ export function planFileStorageRegistry(config) {
  * @param {string} ns
  */
 function renderStoredFileEntity(ns) {
-  return `namespace ${ns}.Domain.Entities;
+  return `using ${ns}.Domain.Common;
 
-public sealed class StoredFile : Common.BaseEntity
+namespace ${ns}.Domain.Entities;
+
+public sealed class StoredFile : BaseEntity
 {
     public string FileName { get; set; } = string.Empty;
 

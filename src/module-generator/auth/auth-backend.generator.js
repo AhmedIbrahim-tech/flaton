@@ -73,15 +73,31 @@ export function planAuthBackend(config) {
       'Cannot generate Authentication for a Dapper-only project. Identity requires EF Core. Use --orm efcore or --orm efcore-dapper.',
     );
   }
+  const architecture = config?.manifest?.backend?.architecture ?? config?.architecture ?? 'cqrs-mediatr';
+  const presentation = config?.manifest?.backend?.presentation ?? config?.presentation ?? 'controllers';
+  const authMode = config?.manifest?.backend?.authentication ?? config?.authMode ?? 'identity-jwt';
+  const isCookieAuth = authMode === 'identity-cookie' || authMode === 'identity';
+  const isJwt = authMode === 'identity-jwt';
+
   assertBackendCompatibility({
     orm,
-    authentication: config?.manifest?.backend?.authentication ?? 'identity-jwt',
+    authentication: authMode,
+    presentation,
   });
 
   const ns = requireProjectName(config);
   const defaultRole = normalizeRole(config?.defaultRole) || DEFAULT_ROLE;
   const roles = normalizeRoles(config?.roles, defaultRole);
-  const ctx = { ns, roles, defaultRole };
+  const ctx = {
+    ns,
+    roles,
+    defaultRole,
+    architecture,
+    presentation,
+    authMode,
+    isCookieAuth,
+    isJwt,
+  };
 
   /** @type {PlannedFile[]} */
   const files = [];
@@ -98,7 +114,10 @@ export function planAuthBackend(config) {
     paths.application('Common', 'Authorization', ...segments);
   const appFeature = (...segments) =>
     paths.application('Features', 'Authentication', ...segments);
+  const appModule = (...segments) =>
+    paths.application('Modules', 'Authentication', ...segments);
   const api = (...segments) => paths.api(...segments);
+  const web = (...segments) => paths.web(...segments);
 
   // --- Infrastructure/Identity -------------------------------------------
   files.push(
@@ -109,16 +128,18 @@ export function planAuthBackend(config) {
   );
 
   // --- Infrastructure/Authentication -------------------------------------
-  files.push(
-    { relativePath: infraAuth('JwtOptions.cs'), contents: renderJwtOptions(ctx), writeMode: 'replace' },
-    { relativePath: infraAuth('RefreshTokenCookieOptions.cs'), contents: renderRefreshTokenCookieOptions(ctx) },
-    { relativePath: infraAuth('IJwtTokenService.cs'), contents: renderIJwtTokenService(ctx) },
-    { relativePath: infraAuth('JwtTokenService.cs'), contents: renderJwtTokenService(ctx) },
-    { relativePath: infraAuth('IRefreshTokenService.cs'), contents: renderIRefreshTokenService(ctx) },
-    { relativePath: infraAuth('RefreshTokenService.cs'), contents: renderRefreshTokenService(ctx) },
-    { relativePath: infraAuth('RefreshTokenCookieManager.cs'), contents: renderRefreshTokenCookieManager(ctx) },
-    { relativePath: infraAuth('AuthCookieService.cs'), contents: renderAuthCookieService(ctx) },
-  );
+  if (isJwt) {
+    files.push(
+      { relativePath: infraAuth('JwtOptions.cs'), contents: renderJwtOptions(ctx), writeMode: 'replace' },
+      { relativePath: infraAuth('RefreshTokenCookieOptions.cs'), contents: renderRefreshTokenCookieOptions(ctx) },
+      { relativePath: infraAuth('IJwtTokenService.cs'), contents: renderIJwtTokenService(ctx) },
+      { relativePath: infraAuth('JwtTokenService.cs'), contents: renderJwtTokenService(ctx) },
+      { relativePath: infraAuth('IRefreshTokenService.cs'), contents: renderIRefreshTokenService(ctx) },
+      { relativePath: infraAuth('RefreshTokenService.cs'), contents: renderRefreshTokenService(ctx) },
+      { relativePath: infraAuth('RefreshTokenCookieManager.cs'), contents: renderRefreshTokenCookieManager(ctx) },
+      { relativePath: infraAuth('AuthCookieService.cs'), contents: renderAuthCookieService(ctx) },
+    );
+  }
 
   files.push(
     {
@@ -140,19 +161,26 @@ export function planAuthBackend(config) {
   );
 
   // --- Infrastructure/Persistence ----------------------------------------
-  files.push(
-    { relativePath: infraPersistence('Entities', 'RefreshToken.cs'), contents: renderRefreshTokenEntity(ctx) },
-    { relativePath: infraPersistence('Configurations', 'RefreshTokenConfiguration.cs'), contents: renderRefreshTokenConfiguration(ctx) },
-  );
+  if (isJwt) {
+    files.push(
+      { relativePath: infraPersistence('Entities', 'RefreshToken.cs'), contents: renderRefreshTokenEntity(ctx) },
+      { relativePath: infraPersistence('Configurations', 'RefreshTokenConfiguration.cs'), contents: renderRefreshTokenConfiguration(ctx) },
+    );
+  }
 
   // --- Application/Abstractions (shared → ifMissing) ----------------------
   files.push(
     { relativePath: appAbstractions('ICurrentUser.cs'), contents: renderICurrentUser(ctx), writeMode: 'ifMissing' },
     { relativePath: appAbstractions('IEmailSender.cs'), contents: renderIEmailSender(ctx), writeMode: 'ifMissing' },
     { relativePath: appAbstractions('Authentication', 'IIdentityService.cs'), contents: renderIIdentityService(ctx) },
-    { relativePath: appAbstractions('Authentication', 'IAuthCookieService.cs'), contents: renderIAuthCookieService(ctx) },
-    { relativePath: appAbstractions('Authentication', 'AuthTokens.cs'), contents: renderAuthTokens(ctx) },
   );
+
+  if (isJwt) {
+    files.push(
+      { relativePath: appAbstractions('Authentication', 'AuthTokens.cs'), contents: renderAuthTokens(ctx) },
+      { relativePath: appAbstractions('Authentication', 'IAuthCookieService.cs'), contents: renderIAuthCookieService(ctx) },
+    );
+  }
 
   // --- Application/Common/Authorization -----------------------------------
   files.push(
@@ -164,28 +192,64 @@ export function planAuthBackend(config) {
     { relativePath: appAuthz('HasPermissionAttribute.cs'), contents: renderHasPermissionAttribute(ctx) },
   );
 
-  // --- Application/Features/Authentication --------------------------------
-  files.push(
-    { relativePath: appFeature('DTOs', 'UserInfoDto.cs'), contents: renderUserInfoDto(ctx) },
-    { relativePath: appFeature('DTOs', 'AuthResponseDto.cs'), contents: renderAuthResponseDto(ctx) },
-    { relativePath: appFeature('Commands', 'Register', 'RegisterCommand.cs'), contents: renderRegisterCommand(ctx) },
-    { relativePath: appFeature('Commands', 'Register', 'RegisterCommandHandler.cs'), contents: renderRegisterHandler(ctx) },
-    { relativePath: appFeature('Commands', 'Register', 'RegisterCommandValidator.cs'), contents: renderRegisterValidator(ctx) },
-    { relativePath: appFeature('Commands', 'Login', 'LoginCommand.cs'), contents: renderLoginCommand(ctx) },
-    { relativePath: appFeature('Commands', 'Login', 'LoginCommandHandler.cs'), contents: renderLoginHandler(ctx) },
-    { relativePath: appFeature('Commands', 'Login', 'LoginCommandValidator.cs'), contents: renderLoginValidator(ctx) },
-    { relativePath: appFeature('Commands', 'RefreshToken', 'RefreshTokenCommand.cs'), contents: renderRefreshCommand(ctx) },
-    { relativePath: appFeature('Commands', 'RefreshToken', 'RefreshTokenCommandHandler.cs'), contents: renderRefreshHandler(ctx) },
-    { relativePath: appFeature('Commands', 'Logout', 'LogoutCommand.cs'), contents: renderLogoutCommand(ctx) },
-    { relativePath: appFeature('Commands', 'Logout', 'LogoutCommandHandler.cs'), contents: renderLogoutHandler(ctx) },
-    { relativePath: appFeature('Queries', 'GetMe', 'GetMeQuery.cs'), contents: renderGetMeQuery(ctx) },
-    { relativePath: appFeature('Queries', 'GetMe', 'GetMeQueryHandler.cs'), contents: renderGetMeHandler(ctx) },
-  );
+  // --- Application Layer (Architecture Dependent) -----------------------
+  if (architecture === 'services') {
+    files.push(
+      { relativePath: appModule('DTOs', 'UserInfoDto.cs'), contents: renderUserInfoDto(ctx) },
+      ...(isJwt ? [{ relativePath: appModule('DTOs', 'AuthResponseDto.cs'), contents: renderAuthResponseDto(ctx) }] : []),
+      { relativePath: appModule('DTOs', 'RegisterRequestDto.cs'), contents: renderRegisterRequestDto(ctx) },
+      { relativePath: appModule('DTOs', 'LoginRequestDto.cs'), contents: renderLoginRequestDto(ctx) },
+      { relativePath: appModule('Interfaces', 'IAuthService.cs'), contents: renderIAuthService(ctx) },
+      { relativePath: appModule('Services', 'AuthService.cs'), contents: renderAuthService(ctx) },
+      { relativePath: appModule('Validators', 'RegisterRequestValidator.cs'), contents: renderRegisterRequestValidator(ctx) },
+      { relativePath: appModule('Validators', 'LoginRequestValidator.cs'), contents: renderLoginRequestValidator(ctx) },
+    );
+  } else {
+    files.push(
+      { relativePath: appFeature('DTOs', 'UserInfoDto.cs'), contents: renderUserInfoDto(ctx) },
+      ...(isJwt ? [{ relativePath: appFeature('DTOs', 'AuthResponseDto.cs'), contents: renderAuthResponseDto(ctx) }] : []),
+      { relativePath: appFeature('Commands', 'Register', 'RegisterCommand.cs'), contents: renderRegisterCommand(ctx) },
+      { relativePath: appFeature('Commands', 'Register', 'RegisterCommandHandler.cs'), contents: renderRegisterHandler(ctx) },
+      { relativePath: appFeature('Commands', 'Register', 'RegisterCommandValidator.cs'), contents: renderRegisterValidator(ctx) },
+      { relativePath: appFeature('Commands', 'Login', 'LoginCommand.cs'), contents: renderLoginCommand(ctx) },
+      { relativePath: appFeature('Commands', 'Login', 'LoginCommandHandler.cs'), contents: renderLoginHandler(ctx) },
+      { relativePath: appFeature('Commands', 'Login', 'LoginCommandValidator.cs'), contents: renderLoginValidator(ctx) },
+      ...(isJwt
+        ? [
+            { relativePath: appFeature('Commands', 'RefreshToken', 'RefreshTokenCommand.cs'), contents: renderRefreshCommand(ctx) },
+            { relativePath: appFeature('Commands', 'RefreshToken', 'RefreshTokenCommandHandler.cs'), contents: renderRefreshHandler(ctx) },
+          ]
+        : []),
+      { relativePath: appFeature('Commands', 'Logout', 'LogoutCommand.cs'), contents: renderLogoutCommand(ctx) },
+      { relativePath: appFeature('Commands', 'Logout', 'LogoutCommandHandler.cs'), contents: renderLogoutHandler(ctx) },
+      { relativePath: appFeature('Queries', 'GetMe', 'GetMeQuery.cs'), contents: renderGetMeQuery(ctx) },
+      { relativePath: appFeature('Queries', 'GetMe', 'GetMeQueryHandler.cs'), contents: renderGetMeHandler(ctx) },
+    );
+  }
 
-  // --- API ----------------------------------------------------------------
-  files.push(
-    { relativePath: api('Controllers', 'AuthController.cs'), contents: renderAuthController(ctx) },
-  );
+  // --- Presentation Layer ------------------------------------------------
+  if (presentation === 'controllers') {
+    files.push({ relativePath: api('Controllers', 'AuthController.cs'), contents: renderAuthController(ctx) });
+  } else if (presentation === 'minimal-api') {
+    files.push({ relativePath: api('Endpoints', 'Authentication', 'AuthEndpoints.cs'), contents: renderMinimalApiAuthEndpoints(ctx) });
+  } else if (presentation === 'mvc') {
+    files.push(
+      { relativePath: web('Controllers', 'AccountController.cs'), contents: renderMvcAccountController(ctx) },
+      { relativePath: web('ViewModels', 'Account', 'LoginViewModel.cs'), contents: renderLoginViewModel(ctx) },
+      { relativePath: web('ViewModels', 'Account', 'RegisterViewModel.cs'), contents: renderRegisterViewModel(ctx) },
+      { relativePath: web('Views', 'Account', 'Login.cshtml'), contents: renderLoginView(ctx) },
+      { relativePath: web('Views', 'Account', 'Register.cshtml'), contents: renderRegisterView(ctx) },
+    );
+  } else if (presentation === 'razor-pages') {
+    files.push(
+      { relativePath: web('Pages', 'Account', 'Login.cshtml'), contents: renderRazorLoginPage(ctx) },
+      { relativePath: web('Pages', 'Account', 'Login.cshtml.cs'), contents: renderRazorLoginPageModel(ctx) },
+      { relativePath: web('Pages', 'Account', 'Register.cshtml'), contents: renderRazorRegisterPage(ctx) },
+      { relativePath: web('Pages', 'Account', 'Register.cshtml.cs'), contents: renderRazorRegisterPageModel(ctx) },
+      { relativePath: web('Pages', 'Account', 'Logout.cshtml'), contents: renderRazorLogoutPage(ctx) },
+      { relativePath: web('Pages', 'Account', 'Logout.cshtml.cs'), contents: renderRazorLogoutPageModel(ctx) },
+    );
+  }
 
   return files;
 }
@@ -197,16 +261,27 @@ export function planAuthBackend(config) {
  */
 export function planAuthRegistryUpdates(config) {
   const ns = requireProjectName(config);
-  return [
-    routerUpdate(ns, 'Authentication', 'Auth', [
-      { name: 'Root' },
-      { name: 'Register', suffix: '/Register' },
-      { name: 'Login', suffix: '/Login' },
-      { name: 'Refresh', suffix: '/Refresh' },
-      { name: 'Logout', suffix: '/Logout' },
-      { name: 'Me', suffix: '/Me' },
-    ]),
-    {
+  const presentation = config?.manifest?.backend?.presentation ?? config?.presentation ?? 'controllers';
+  const isWeb = presentation === 'mvc' || presentation === 'razor-pages';
+  const authMode = config?.manifest?.backend?.authentication ?? config?.authMode ?? 'identity-jwt';
+  const isJwt = authMode === 'identity-jwt';
+  const updates = [];
+
+  if (!isWeb) {
+    updates.push(
+      routerUpdate(ns, 'Authentication', 'Auth', [
+        { name: 'Root' },
+        { name: 'Register', suffix: '/Register' },
+        { name: 'Login', suffix: '/Login' },
+        ...(isJwt ? [{ name: 'Refresh', suffix: '/Refresh' }] : []),
+        { name: 'Logout', suffix: '/Logout' },
+        { name: 'Me', suffix: '/Me' },
+      ]),
+    );
+  }
+
+  if (isJwt) {
+    updates.push({
       relativePath: paths.infrastructure('Persistence', 'ApplicationDbContext.cs'),
       update: (existing) =>
         upsertContextDbSet(
@@ -216,8 +291,10 @@ export function planAuthRegistryUpdates(config) {
           'RefreshTokens',
           `${ns}.Infrastructure.Persistence.Entities`,
         ),
-    },
-  ];
+    });
+  }
+
+  return updates;
 }
 
 /**
@@ -229,13 +306,31 @@ export function planAuthRegistryUpdates(config) {
  */
 export function authBackendConflictPaths(config) {
   requireProjectName(config);
-  return [
+  const presentation = config?.manifest?.backend?.presentation ?? config?.presentation ?? 'controllers';
+  const architecture = config?.manifest?.backend?.architecture ?? config?.architecture ?? 'cqrs-mediatr';
+
+  const conflictPaths = [
     path.join('Infrastructure', 'DependencyInjection', 'AuthenticationServiceExtensions.cs'),
-    path.join('Application', 'Features', 'Authentication'),
     path.join('Application', 'Common', 'Authorization', 'AppPermissions.cs'),
-    path.join('API', 'Controllers', 'AuthController.cs'),
-    path.join('Infrastructure', 'Persistence', 'Entities', 'RefreshToken.cs'),
   ];
+
+  if (architecture === 'services') {
+    conflictPaths.push(path.join('Application', 'Modules', 'Authentication'));
+  } else {
+    conflictPaths.push(path.join('Application', 'Features', 'Authentication'));
+  }
+
+  if (presentation === 'controllers') {
+    conflictPaths.push(path.join('API', 'Controllers', 'AuthController.cs'));
+  } else if (presentation === 'minimal-api') {
+    conflictPaths.push(path.join('API', 'Endpoints', 'Authentication', 'AuthEndpoints.cs'));
+  } else if (presentation === 'mvc') {
+    conflictPaths.push(path.join('Web', 'Controllers', 'AccountController.cs'));
+  } else if (presentation === 'razor-pages') {
+    conflictPaths.push(path.join('Web', 'Pages', 'Account'));
+  }
+
+  return conflictPaths;
 }
 
 /**
@@ -849,8 +944,7 @@ public sealed class AuthCookieService : IAuthCookieService
 
 /** @param {{ ns: string }} ctx */
 function renderCurrentUserService({ ns }) {
-  return `using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
+  return `using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using ${ns}.Application.Abstractions;
 using ${ns}.Application.Common.Authorization;
@@ -874,14 +968,14 @@ public sealed class CurrentUserService : ICurrentUser
     {
         get
         {
-            var value = Principal?.FindFirstValue(JwtRegisteredClaimNames.Sub)
+            var value = Principal?.FindFirstValue("sub")
                 ?? Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
             return Guid.TryParse(value, out var id) ? id : null;
         }
     }
 
     public string? Email =>
-        Principal?.FindFirstValue(JwtRegisteredClaimNames.Email)
+        Principal?.FindFirstValue("email")
         ?? Principal?.FindFirstValue(ClaimTypes.Email);
 
     public IReadOnlyList<string> Roles =>
@@ -895,14 +989,169 @@ public sealed class CurrentUserService : ICurrentUser
 `;
 }
 
-/** @param {{ ns: string }} ctx */
-function renderIdentityService({ ns }) {
+/** @param {{ ns: string, isJwt: boolean, isCookieAuth: boolean, architecture: string }} ctx */
+function renderIdentityService(ctx) {
+  const { ns, isJwt, architecture } = ctx;
+  const dtoNs = `${ns}.Application.${architecture === 'services' ? 'Modules' : 'Features'}.Authentication.DTOs`;
+
+  if (!isJwt) {
+    return `using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
+using ${ns}.Application.Abstractions.Authentication;
+using ${ns}.Application.Common.Authorization;
+using ${ns}.Application.Common.Results;
+using ${dtoNs};
+
+namespace ${ns}.Infrastructure.Identity;
+
+public sealed class IdentityService : IIdentityService
+{
+    private readonly UserManager<ApplicationUser> _userManager;
+    private readonly RoleManager<ApplicationRole> _roleManager;
+    private readonly SignInManager<ApplicationUser> _signInManager;
+    private readonly IHttpContextAccessor _httpContextAccessor;
+
+    public IdentityService(
+        UserManager<ApplicationUser> userManager,
+        RoleManager<ApplicationRole> roleManager,
+        SignInManager<ApplicationUser> signInManager,
+        IHttpContextAccessor httpContextAccessor)
+    {
+        _userManager = userManager;
+        _roleManager = roleManager;
+        _signInManager = signInManager;
+        _httpContextAccessor = httpContextAccessor;
+    }
+
+    public async Task<Result<Guid>> RegisterAsync(
+        string email,
+        string password,
+        string displayName,
+        string role,
+        CancellationToken cancellationToken = default)
+    {
+        var existing = await _userManager.FindByEmailAsync(email);
+        if (existing is not null)
+        {
+            return Result.Failure<Guid>(
+                Error.Conflict("Auth.EmailInUse", "An account with this email already exists."));
+        }
+
+        var user = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            Email = email,
+            UserName = email,
+            DisplayName = string.IsNullOrWhiteSpace(displayName) ? email : displayName,
+        };
+
+        var createResult = await _userManager.CreateAsync(user, password);
+        if (!createResult.Succeeded)
+        {
+            return Result.Failure<Guid>(
+                Error.Validation("Auth.RegistrationFailed", DescribeIdentityErrors(createResult)));
+        }
+
+        if (await _roleManager.RoleExistsAsync(role))
+        {
+            await _userManager.AddToRoleAsync(user, role);
+        }
+
+        return Result.Success(user.Id);
+    }
+
+    public async Task<Result<UserInfoDto>> SignInCookieAsync(
+        string email,
+        string password,
+        bool isPersistent,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await _userManager.FindByEmailAsync(email);
+        if (user is null)
+        {
+            return Result.Failure<UserInfoDto>(InvalidCredentials());
+        }
+
+        var result = await _signInManager.PasswordSignInAsync(user, password, isPersistent, lockoutOnFailure: false);
+        if (!result.Succeeded)
+        {
+            return Result.Failure<UserInfoDto>(InvalidCredentials());
+        }
+
+        var (roles, permissions) = await GetRolesAndPermissionsAsync(user);
+        return Result.Success(BuildUserInfo(user, roles, permissions));
+    }
+
+    public async Task SignOutCookieAsync(CancellationToken cancellationToken = default)
+    {
+        await _signInManager.SignOutAsync();
+    }
+
+    public async Task<Result<UserInfoDto>> GetUserInfoAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user is null)
+        {
+            return Result.Failure<UserInfoDto>(
+                Error.NotFound("Auth.UserNotFound", "The user was not found."));
+        }
+
+        var (roles, permissions) = await GetRolesAndPermissionsAsync(user);
+        return Result.Success(BuildUserInfo(user, roles, permissions));
+    }
+
+    private async Task<(IReadOnlyList<string> Roles, IReadOnlyList<string> Permissions)> GetRolesAndPermissionsAsync(
+        ApplicationUser user)
+    {
+        var roles = await _userManager.GetRolesAsync(user);
+        var permissions = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var roleName in roles)
+        {
+            var role = await _roleManager.FindByNameAsync(roleName);
+            if (role is null)
+            {
+                continue;
+            }
+
+            var claims = await _roleManager.GetClaimsAsync(role);
+            foreach (var claim in claims.Where(claim => claim.Type == AppPermissions.ClaimType))
+            {
+                permissions.Add(claim.Value);
+            }
+        }
+
+        return (roles.ToList(), permissions.ToList());
+    }
+
+    private static UserInfoDto BuildUserInfo(
+        ApplicationUser user,
+        IReadOnlyList<string> roles,
+        IReadOnlyList<string> permissions) =>
+        new()
+        {
+            Id = user.Id,
+            Email = user.Email ?? string.Empty,
+            DisplayName = user.DisplayName,
+            Roles = roles,
+            Permissions = permissions,
+        };
+
+    private static Error InvalidCredentials() =>
+        Error.Unauthorized("Auth.InvalidCredentials", "Invalid email or password.");
+
+    private static string DescribeIdentityErrors(IdentityResult result) =>
+        string.Join(" ", result.Errors.Select(error => error.Description));
+}
+`;
+  }
+
   return `using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using ${ns}.Application.Abstractions.Authentication;
 using ${ns}.Application.Common.Authorization;
 using ${ns}.Application.Common.Results;
-using ${ns}.Application.Features.Authentication.DTOs;
+using ${dtoNs};
 using ${ns}.Infrastructure.Authentication;
 
 namespace ${ns}.Infrastructure.Identity;
@@ -937,7 +1186,7 @@ public sealed class IdentityService : IIdentityService
         string password,
         string displayName,
         string role,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         var existing = await _userManager.FindByEmailAsync(email);
         if (existing is not null)
@@ -972,7 +1221,7 @@ public sealed class IdentityService : IIdentityService
     public async Task<Result<AuthTokens>> PasswordSignInAsync(
         string email,
         string password,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         var user = await _userManager.FindByEmailAsync(email);
         if (user is null || !await _userManager.CheckPasswordAsync(user, password))
@@ -986,7 +1235,7 @@ public sealed class IdentityService : IIdentityService
 
     public async Task<Result<AuthTokens>> RefreshAsync(
         string rawRefreshToken,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         var rotation = await _refreshTokenService.RotateAsync(rawRefreshToken, RequestIp, cancellationToken);
         if (!rotation.Succeeded)
@@ -1007,10 +1256,10 @@ public sealed class IdentityService : IIdentityService
         return Result.Success(tokens);
     }
 
-    public Task RevokeRefreshTokenAsync(string rawRefreshToken, CancellationToken cancellationToken) =>
+    public Task RevokeRefreshTokenAsync(string rawRefreshToken, CancellationToken cancellationToken = default) =>
         _refreshTokenService.RevokeAsync(rawRefreshToken, RequestIp, cancellationToken);
 
-    public async Task<Result<UserInfoDto>> GetUserInfoAsync(Guid userId, CancellationToken cancellationToken)
+    public async Task<Result<UserInfoDto>> GetUserInfoAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         var user = await _userManager.FindByIdAsync(userId.ToString());
         if (user is null)
@@ -1246,8 +1495,109 @@ public sealed class AuthDataSeeder
 `;
 }
 
-/** @param {{ ns: string }} ctx */
-function renderAuthDependencyInjection({ ns }) {
+/** @param {{ ns: string, isJwt: boolean, isCookieAuth: boolean, architecture: string }} ctx */
+function renderAuthDependencyInjection(ctx) {
+  const { ns, isJwt, isCookieAuth, architecture } = ctx;
+  const isServices = architecture === 'services';
+
+  if (isCookieAuth) {
+    return `using System.Security.Claims;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using ${ns}.Application.Abstractions;
+using ${ns}.Application.Abstractions.Authentication;
+using ${ns}.Application.Common.Authorization;
+${isServices ? `using ${ns}.Application.Modules.Authentication.Interfaces;\nusing ${ns}.Application.Modules.Authentication.Services;` : ''}
+using ${ns}.Infrastructure.Identity;
+using ${ns}.Infrastructure.Persistence;
+using ${ns}.Infrastructure.Seeders;
+using ${ns}.Infrastructure.Services;
+
+namespace ${ns}.Infrastructure.DependencyInjection;
+
+public static class AuthenticationServiceExtensions
+{
+    public static IServiceCollection AddAuthModule(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services.AddHttpContextAccessor();
+
+        services
+            .AddIdentity<ApplicationUser, ApplicationRole>(options =>
+            {
+                options.User.RequireUniqueEmail = true;
+                options.Password.RequiredLength = 8;
+                options.Password.RequireDigit = true;
+                options.Password.RequireLowercase = true;
+                options.Password.RequireUppercase = true;
+                options.Password.RequireNonAlphanumeric = false;
+            })
+            .AddEntityFrameworkStores<ApplicationDbContext>()
+            .AddDefaultTokenProviders();
+
+        services.ConfigureApplicationCookie(options =>
+        {
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SameSite = SameSiteMode.Lax;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+            options.ExpireTimeSpan = TimeSpan.FromDays(7);
+            options.SlidingExpiration = true;
+            options.Events.OnRedirectToLogin = context =>
+            {
+                if (context.Request.Path.StartsWithSegments("/api"))
+                {
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    return Task.CompletedTask;
+                }
+                context.Response.Redirect(context.RedirectUri);
+                return Task.CompletedTask;
+            };
+            options.Events.OnRedirectToAccessDenied = context =>
+            {
+                if (context.Request.Path.StartsWithSegments("/api"))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    return Task.CompletedTask;
+                }
+                context.Response.Redirect(context.RedirectUri);
+                return Task.CompletedTask;
+            };
+        });
+
+        services.AddAuthorization();
+        services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+        services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
+
+        services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.AddFixedWindowLimiter("auth", limiter =>
+            {
+                limiter.PermitLimit = 30;
+                limiter.Window = TimeSpan.FromMinutes(1);
+                limiter.QueueLimit = 0;
+            });
+        });
+
+        services.AddScoped<IIdentityService, IdentityService>();
+        services.AddScoped<ICurrentUser, CurrentUserService>();
+        services.AddScoped<IEmailSender, DevelopmentEmailSender>();
+        services.AddScoped<AuthDataSeeder>();
+${isServices ? `        services.AddScoped<IAuthService, AuthService>();` : ''}
+
+        return services;
+    }
+}
+`;
+  }
+
   return `using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
@@ -1264,6 +1614,7 @@ using Microsoft.IdentityModel.Tokens;
 using ${ns}.Application.Abstractions;
 using ${ns}.Application.Abstractions.Authentication;
 using ${ns}.Application.Common.Authorization;
+${isServices ? `using ${ns}.Application.Modules.Authentication.Interfaces;\nusing ${ns}.Application.Modules.Authentication.Services;` : ''}
 using ${ns}.Infrastructure.Authentication;
 using ${ns}.Infrastructure.Identity;
 using ${ns}.Infrastructure.Persistence;
@@ -1351,6 +1702,7 @@ public static class AuthenticationServiceExtensions
         services.AddScoped<ICurrentUser, CurrentUserService>();
         services.AddScoped<IEmailSender, DevelopmentEmailSender>();
         services.AddScoped<AuthDataSeeder>();
+${isServices ? `        services.AddScoped<IAuthService, AuthService>();` : ''}
 
         return services;
     }
@@ -1502,10 +1854,13 @@ public interface IEmailSender
 `;
 }
 
-/** @param {{ ns: string }} ctx */
-function renderIIdentityService({ ns }) {
+/** @param {{ ns: string, isJwt: boolean, isCookieAuth: boolean, architecture: string }} ctx */
+function renderIIdentityService(ctx) {
+  const { ns, isJwt, architecture } = ctx;
+  const dtoNs = `${ns}.Application.${architecture === 'services' ? 'Modules' : 'Features'}.Authentication.DTOs`;
+
   return `using ${ns}.Application.Common.Results;
-using ${ns}.Application.Features.Authentication.DTOs;
+using ${dtoNs};
 
 namespace ${ns}.Application.Abstractions.Authentication;
 
@@ -1516,22 +1871,30 @@ public interface IIdentityService
         string password,
         string displayName,
         string role,
-        CancellationToken cancellationToken);
-
+        CancellationToken cancellationToken = default);
+${isJwt ? `
     Task<Result<AuthTokens>> PasswordSignInAsync(
         string email,
         string password,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken = default);
 
     Task<Result<AuthTokens>> RefreshAsync(
         string rawRefreshToken,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken = default);
 
     Task RevokeRefreshTokenAsync(
         string rawRefreshToken,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken = default);
+` : `
+    Task<Result<UserInfoDto>> SignInCookieAsync(
+        string email,
+        string password,
+        bool isPersistent,
+        CancellationToken cancellationToken = default);
 
-    Task<Result<UserInfoDto>> GetUserInfoAsync(Guid userId, CancellationToken cancellationToken);
+    Task SignOutCookieAsync(CancellationToken cancellationToken = default);
+`}
+    Task<Result<UserInfoDto>> GetUserInfoAsync(Guid userId, CancellationToken cancellationToken = default);
 }
 `;
 }
@@ -1551,9 +1914,11 @@ public interface IAuthCookieService
 `;
 }
 
-/** @param {{ ns: string }} ctx */
-function renderAuthTokens({ ns }) {
-  return `using ${ns}.Application.Features.Authentication.DTOs;
+/** @param {{ ns: string, architecture: string }} ctx */
+function renderAuthTokens({ ns, architecture }) {
+  const dtoNs = `${ns}.Application.${architecture === 'services' ? 'Modules' : 'Features'}.Authentication.DTOs`;
+
+  return `using ${dtoNs};
 
 namespace ${ns}.Application.Abstractions.Authentication;
 
@@ -1757,9 +2122,10 @@ public sealed class HasPermissionAttribute : AuthorizeAttribute
 /* Application/Features/Auth renderers                                     */
 /* ====================================================================== */
 
-/** @param {{ ns: string }} ctx */
-function renderUserInfoDto({ ns }) {
-  return `namespace ${ns}.Application.Features.Authentication.DTOs;
+/** @param {{ ns: string, architecture: string }} ctx */
+function renderUserInfoDto({ ns, architecture }) {
+  const layer = architecture === 'services' ? 'Modules' : 'Features';
+  return `namespace ${ns}.Application.${layer}.Authentication.DTOs;
 
 public sealed record UserInfoDto
 {
@@ -1776,9 +2142,10 @@ public sealed record UserInfoDto
 `;
 }
 
-/** @param {{ ns: string }} ctx */
-function renderAuthResponseDto({ ns }) {
-  return `namespace ${ns}.Application.Features.Authentication.DTOs;
+/** @param {{ ns: string, architecture: string }} ctx */
+function renderAuthResponseDto({ ns, architecture }) {
+  const layer = architecture === 'services' ? 'Modules' : 'Features';
+  return `namespace ${ns}.Application.${layer}.Authentication.DTOs;
 
 /// <summary>
 /// The JSON response for login/refresh. It intentionally does NOT include the
@@ -1876,8 +2243,26 @@ public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand
 `;
 }
 
-/** @param {{ ns: string }} ctx */
-function renderLoginCommand({ ns }) {
+/** @param {{ ns: string, isJwt: boolean }} ctx */
+function renderLoginCommand({ ns, isJwt }) {
+  if (!isJwt) {
+    return `using MediatR;
+using ${ns}.Application.Common.Results;
+using ${ns}.Application.Features.Authentication.DTOs;
+
+namespace ${ns}.Application.Features.Authentication.Commands.Login;
+
+public sealed record LoginCommand : IRequest<Result<UserInfoDto>>
+{
+    public string Email { get; init; } = string.Empty;
+
+    public string Password { get; init; } = string.Empty;
+
+    public bool RememberMe { get; init; }
+}
+`;
+  }
+
   return `using MediatR;
 using ${ns}.Application.Common.Results;
 using ${ns}.Application.Features.Authentication.DTOs;
@@ -1893,8 +2278,39 @@ public sealed record LoginCommand : IRequest<Result<AuthResponseDto>>
 `;
 }
 
-/** @param {{ ns: string }} ctx */
-function renderLoginHandler({ ns }) {
+/** @param {{ ns: string, isJwt: boolean }} ctx */
+function renderLoginHandler({ ns, isJwt }) {
+  if (!isJwt) {
+    return `using MediatR;
+using ${ns}.Application.Abstractions.Authentication;
+using ${ns}.Application.Common.Results;
+using ${ns}.Application.Features.Authentication.DTOs;
+
+namespace ${ns}.Application.Features.Authentication.Commands.Login;
+
+public sealed class LoginCommandHandler : IRequestHandler<LoginCommand, Result<UserInfoDto>>
+{
+    private readonly IIdentityService _identityService;
+
+    public LoginCommandHandler(IIdentityService identityService)
+    {
+        _identityService = identityService;
+    }
+
+    public async Task<Result<UserInfoDto>> Handle(
+        LoginCommand request,
+        CancellationToken cancellationToken)
+    {
+        return await _identityService.SignInCookieAsync(
+            request.Email,
+            request.Password,
+            request.RememberMe,
+            cancellationToken);
+    }
+}
+`;
+  }
+
   return `using MediatR;
 using ${ns}.Application.Abstractions.Authentication;
 using ${ns}.Application.Common.Results;
@@ -2039,8 +2455,33 @@ public sealed record LogoutCommand : IRequest<Result>;
 `;
 }
 
-/** @param {{ ns: string }} ctx */
-function renderLogoutHandler({ ns }) {
+/** @param {{ ns: string, isJwt: boolean }} ctx */
+function renderLogoutHandler({ ns, isJwt }) {
+  if (!isJwt) {
+    return `using MediatR;
+using ${ns}.Application.Abstractions.Authentication;
+using ${ns}.Application.Common.Results;
+
+namespace ${ns}.Application.Features.Authentication.Commands.Logout;
+
+public sealed class LogoutCommandHandler : IRequestHandler<LogoutCommand, Result>
+{
+    private readonly IIdentityService _identityService;
+
+    public LogoutCommandHandler(IIdentityService identityService)
+    {
+        _identityService = identityService;
+    }
+
+    public async Task<Result> Handle(LogoutCommand request, CancellationToken cancellationToken)
+    {
+        await _identityService.SignOutCookieAsync(cancellationToken);
+        return Result.Success();
+    }
+}
+`;
+  }
+
   return `using MediatR;
 using ${ns}.Application.Abstractions.Authentication;
 using ${ns}.Application.Common.Results;
@@ -2073,11 +2514,12 @@ public sealed class LogoutCommandHandler : IRequestHandler<LogoutCommand, Result
 `;
 }
 
-/** @param {{ ns: string }} ctx */
-function renderGetMeQuery({ ns }) {
+/** @param {{ ns: string, architecture: string }} ctx */
+function renderGetMeQuery({ ns, architecture }) {
+  const layer = architecture === 'services' ? 'Modules' : 'Features';
   return `using MediatR;
 using ${ns}.Application.Common.Results;
-using ${ns}.Application.Features.Authentication.DTOs;
+using ${ns}.Application.${layer}.Authentication.DTOs;
 
 namespace ${ns}.Application.Features.Authentication.Queries.GetMe;
 
@@ -2085,13 +2527,14 @@ public sealed record GetMeQuery : IRequest<Result<UserInfoDto>>;
 `;
 }
 
-/** @param {{ ns: string }} ctx */
-function renderGetMeHandler({ ns }) {
+/** @param {{ ns: string, architecture: string }} ctx */
+function renderGetMeHandler({ ns, architecture }) {
+  const layer = architecture === 'services' ? 'Modules' : 'Features';
   return `using MediatR;
 using ${ns}.Application.Abstractions;
 using ${ns}.Application.Abstractions.Authentication;
 using ${ns}.Application.Common.Results;
-using ${ns}.Application.Features.Authentication.DTOs;
+using ${ns}.Application.${layer}.Authentication.DTOs;
 
 namespace ${ns}.Application.Features.Authentication.Queries.GetMe;
 
@@ -2121,11 +2564,313 @@ public sealed class GetMeQueryHandler : IRequestHandler<GetMeQuery, Result<UserI
 }
 
 /* ====================================================================== */
-/* API renderers                                                          */
+/* Application Services DTOs & Services                                   */
 /* ====================================================================== */
 
 /** @param {{ ns: string }} ctx */
-function renderAuthController({ ns }) {
+function renderRegisterRequestDto({ ns }) {
+  return `namespace ${ns}.Application.Modules.Authentication.DTOs;
+
+public sealed record RegisterRequestDto
+{
+    public string Email { get; init; } = string.Empty;
+
+    public string Password { get; init; } = string.Empty;
+
+    public string DisplayName { get; init; } = string.Empty;
+}
+`;
+}
+
+/** @param {{ ns: string }} ctx */
+function renderLoginRequestDto({ ns }) {
+  return `namespace ${ns}.Application.Modules.Authentication.DTOs;
+
+public sealed record LoginRequestDto
+{
+    public string Email { get; init; } = string.Empty;
+
+    public string Password { get; init; } = string.Empty;
+
+    public bool RememberMe { get; init; }
+}
+`;
+}
+
+/** @param {{ ns: string }} ctx */
+function renderRegisterRequestValidator({ ns }) {
+  return `using FluentValidation;
+using ${ns}.Application.Modules.Authentication.DTOs;
+
+namespace ${ns}.Application.Modules.Authentication.Validators;
+
+public sealed class RegisterRequestValidator : AbstractValidator<RegisterRequestDto>
+{
+    public RegisterRequestValidator()
+    {
+        RuleFor(x => x.Email)
+            .NotEmpty()
+            .EmailAddress()
+            .MaximumLength(256);
+
+        RuleFor(x => x.Password)
+            .NotEmpty()
+            .MinimumLength(8)
+            .MaximumLength(128);
+
+        RuleFor(x => x.DisplayName)
+            .MaximumLength(128);
+    }
+}
+`;
+}
+
+/** @param {{ ns: string }} ctx */
+function renderLoginRequestValidator({ ns }) {
+  return `using FluentValidation;
+using ${ns}.Application.Modules.Authentication.DTOs;
+
+namespace ${ns}.Application.Modules.Authentication.Validators;
+
+public sealed class LoginRequestValidator : AbstractValidator<LoginRequestDto>
+{
+    public LoginRequestValidator()
+    {
+        RuleFor(x => x.Email)
+            .NotEmpty()
+            .EmailAddress();
+
+        RuleFor(x => x.Password)
+            .NotEmpty();
+    }
+}
+`;
+}
+
+/** @param {{ ns: string, isJwt: boolean }} ctx */
+function renderIAuthService({ ns, isJwt }) {
+  return `using ${ns}.Application.Common.Results;
+using ${ns}.Application.Modules.Authentication.DTOs;
+
+namespace ${ns}.Application.Modules.Authentication.Interfaces;
+
+public interface IAuthService
+{
+    Task<Result<Guid>> RegisterAsync(RegisterRequestDto request, CancellationToken cancellationToken = default);
+${isJwt ? `
+    Task<Result<AuthResponseDto>> LoginAsync(LoginRequestDto request, CancellationToken cancellationToken = default);
+
+    Task<Result<AuthResponseDto>> RefreshAsync(CancellationToken cancellationToken = default);
+` : `
+    Task<Result<UserInfoDto>> LoginAsync(LoginRequestDto request, CancellationToken cancellationToken = default);
+`}
+    Task<Result> LogoutAsync(CancellationToken cancellationToken = default);
+
+    Task<Result<UserInfoDto>> GetMeAsync(CancellationToken cancellationToken = default);
+}
+`;
+}
+
+/** @param {{ ns: string, isJwt: boolean, defaultRole: string }} ctx */
+function renderAuthService(ctx) {
+  const { ns, isJwt, defaultRole } = ctx;
+  const defaultConst = toRoleConst(defaultRole);
+
+  return `using ${ns}.Application.Abstractions;
+using ${ns}.Application.Abstractions.Authentication;
+using ${ns}.Application.Common.Authorization;
+using ${ns}.Application.Common.Results;
+using ${ns}.Application.Modules.Authentication.DTOs;
+using ${ns}.Application.Modules.Authentication.Interfaces;
+
+namespace ${ns}.Application.Modules.Authentication.Services;
+
+public sealed class AuthService : IAuthService
+{
+    private readonly IIdentityService _identityService;
+    private readonly ICurrentUser _currentUser;
+${isJwt ? `    private readonly IAuthCookieService _cookieService;` : ''}
+
+    public AuthService(
+        IIdentityService identityService,
+        ICurrentUser currentUser${isJwt ? ',\n        IAuthCookieService cookieService' : ''})
+    {
+        _identityService = identityService;
+        _currentUser = currentUser;
+${isJwt ? `        _cookieService = cookieService;` : ''}
+    }
+
+    public async Task<Result<Guid>> RegisterAsync(RegisterRequestDto request, CancellationToken cancellationToken = default)
+    {
+        return await _identityService.RegisterAsync(
+            request.Email,
+            request.Password,
+            request.DisplayName,
+            AppRoles.${defaultConst},
+            cancellationToken);
+    }
+${isJwt ? `
+    public async Task<Result<AuthResponseDto>> LoginAsync(LoginRequestDto request, CancellationToken cancellationToken = default)
+    {
+        var result = await _identityService.PasswordSignInAsync(request.Email, request.Password, cancellationToken);
+        if (result.IsFailure)
+        {
+            return Result.Failure<AuthResponseDto>(result.Error);
+        }
+
+        var tokens = result.Value;
+        _cookieService.WriteRefreshToken(tokens.RefreshToken, tokens.RefreshExpiresAtUtc);
+
+        return Result.Success(new AuthResponseDto
+        {
+            AccessToken = tokens.AccessToken,
+            ExpiresAtUtc = tokens.ExpiresAtUtc,
+            User = tokens.User,
+        });
+    }
+
+    public async Task<Result<AuthResponseDto>> RefreshAsync(CancellationToken cancellationToken = default)
+    {
+        var rawToken = _cookieService.ReadRefreshToken();
+        if (string.IsNullOrWhiteSpace(rawToken))
+        {
+            return Result.Failure<AuthResponseDto>(
+                Error.Unauthorized("Auth.MissingRefreshToken", "No refresh token was provided."));
+        }
+
+        var result = await _identityService.RefreshAsync(rawToken, cancellationToken);
+        if (result.IsFailure)
+        {
+            _cookieService.DeleteRefreshToken();
+            return Result.Failure<AuthResponseDto>(result.Error);
+        }
+
+        var tokens = result.Value;
+        _cookieService.WriteRefreshToken(tokens.RefreshToken, tokens.RefreshExpiresAtUtc);
+
+        return Result.Success(new AuthResponseDto
+        {
+            AccessToken = tokens.AccessToken,
+            ExpiresAtUtc = tokens.ExpiresAtUtc,
+            User = tokens.User,
+        });
+    }
+
+    public async Task<Result> LogoutAsync(CancellationToken cancellationToken = default)
+    {
+        var rawToken = _cookieService.ReadRefreshToken();
+        if (!string.IsNullOrWhiteSpace(rawToken))
+        {
+            await _identityService.RevokeRefreshTokenAsync(rawToken, cancellationToken);
+        }
+
+        _cookieService.DeleteRefreshToken();
+        return Result.Success();
+    }
+` : `
+    public async Task<Result<UserInfoDto>> LoginAsync(LoginRequestDto request, CancellationToken cancellationToken = default)
+    {
+        return await _identityService.SignInCookieAsync(request.Email, request.Password, request.RememberMe, cancellationToken);
+    }
+
+    public async Task<Result> LogoutAsync(CancellationToken cancellationToken = default)
+    {
+        await _identityService.SignOutCookieAsync(cancellationToken);
+        return Result.Success();
+    }
+`}
+    public async Task<Result<UserInfoDto>> GetMeAsync(CancellationToken cancellationToken = default)
+    {
+        if (!_currentUser.IsAuthenticated || _currentUser.UserId is null)
+        {
+            return Result.Failure<UserInfoDto>(
+                Error.Unauthorized("Auth.NotAuthenticated", "You are not authenticated."));
+        }
+
+        return await _identityService.GetUserInfoAsync(_currentUser.UserId.Value, cancellationToken);
+    }
+}
+`;
+}
+
+/* ====================================================================== */
+/* API / Controllers / Endpoints / Views renderers                        */
+/* ====================================================================== */
+
+/** @param {{ ns: string, isJwt: boolean, architecture: string }} ctx */
+function renderAuthController({ ns, isJwt, architecture }) {
+  const isServices = architecture === 'services';
+
+  if (isServices) {
+    return `using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using ${ns}.API.Contracts;
+using ${ns}.Application.Modules.Authentication.DTOs;
+using ${ns}.Application.Modules.Authentication.Interfaces;
+
+namespace ${ns}.API.Controllers;
+
+[ApiController]
+public sealed class AuthController : ApiControllerBase
+{
+    private readonly IAuthService _authService;
+
+    public AuthController(IAuthService authService)
+    {
+        _authService = authService;
+    }
+
+    [AllowAnonymous]
+    [EnableRateLimiting("auth")]
+    [HttpPost(Router.Authentication.Register)]
+    public async Task<IActionResult> Register(
+        [FromBody] RegisterRequestDto dto,
+        CancellationToken cancellationToken)
+    {
+        var result = await _authService.RegisterAsync(dto, cancellationToken);
+        return ToActionResult(result);
+    }
+
+    [AllowAnonymous]
+    [EnableRateLimiting("auth")]
+    [HttpPost(Router.Authentication.Login)]
+    public async Task<IActionResult> Login(
+        [FromBody] LoginRequestDto dto,
+        CancellationToken cancellationToken)
+    {
+        var result = await _authService.LoginAsync(dto, cancellationToken);
+        return ToActionResult(result);
+    }
+${isJwt ? `
+    [AllowAnonymous]
+    [EnableRateLimiting("auth")]
+    [HttpPost(Router.Authentication.Refresh)]
+    public async Task<IActionResult> Refresh(CancellationToken cancellationToken)
+    {
+        var result = await _authService.RefreshAsync(cancellationToken);
+        return ToActionResult(result);
+    }
+` : ''}
+    [Authorize]
+    [HttpPost(Router.Authentication.Logout)]
+    public async Task<IActionResult> Logout(CancellationToken cancellationToken)
+    {
+        var result = await _authService.LogoutAsync(cancellationToken);
+        return ToActionResult(result);
+    }
+
+    [Authorize]
+    [HttpGet(Router.Authentication.Me)]
+    public async Task<IActionResult> Me(CancellationToken cancellationToken)
+    {
+        var result = await _authService.GetMeAsync(cancellationToken);
+        return ToActionResult(result);
+    }
+}
+`;
+  }
+
   return `using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -2134,8 +2879,7 @@ using ${ns}.API.Contracts;
 using ${ns}.Application.Features.Authentication.Commands.Login;
 using ${ns}.Application.Features.Authentication.Commands.Logout;
 using ${ns}.Application.Features.Authentication.Queries.GetMe;
-using ${ns}.Application.Features.Authentication.Commands.RefreshToken;
-using ${ns}.Application.Features.Authentication.Commands.Register;
+${isJwt ? `using ${ns}.Application.Features.Authentication.Commands.RefreshToken;\n` : ''}using ${ns}.Application.Features.Authentication.Commands.Register;
 
 namespace ${ns}.API.Controllers;
 
@@ -2170,7 +2914,7 @@ public sealed class AuthController : ApiControllerBase
         var result = await _sender.Send(command, cancellationToken);
         return ToActionResult(result);
     }
-
+${isJwt ? `
     [AllowAnonymous]
     [EnableRateLimiting("auth")]
     [HttpPost(Router.Authentication.Refresh)]
@@ -2179,7 +2923,7 @@ public sealed class AuthController : ApiControllerBase
         var result = await _sender.Send(new RefreshTokenCommand(), cancellationToken);
         return ToActionResult(result);
     }
-
+` : ''}
     [Authorize]
     [HttpPost(Router.Authentication.Logout)]
     public async Task<IActionResult> Logout(CancellationToken cancellationToken)
@@ -2194,6 +2938,877 @@ public sealed class AuthController : ApiControllerBase
     {
         var result = await _sender.Send(new GetMeQuery(), cancellationToken);
         return ToActionResult(result);
+    }
+}
+`;
+}
+
+/** @param {{ ns: string, isJwt: boolean, architecture: string }} ctx */
+function renderMinimalApiAuthEndpoints({ ns, isJwt, architecture }) {
+  const isServices = architecture === 'services';
+
+  if (isServices) {
+    return `using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using ${ns}.API.Contracts;
+using ${ns}.Application.Modules.Authentication.DTOs;
+using ${ns}.Application.Modules.Authentication.Interfaces;
+
+namespace ${ns}.API.Endpoints.Authentication;
+
+public static class AuthEndpoints
+{
+    public static IEndpointRouteBuilder MapAuthenticationEndpoints(this IEndpointRouteBuilder app)
+    {
+        app.MapPost(Router.Authentication.Register, async (RegisterRequestDto dto, IAuthService authService, CancellationToken ct) =>
+        {
+            var result = await authService.RegisterAsync(dto, ct);
+            return result.IsSuccess ? Results.Ok() : Results.BadRequest(result.Error);
+        })
+        .AllowAnonymous()
+        .RequireRateLimiting("auth")
+        .WithName("Register");
+
+        app.MapPost(Router.Authentication.Login, async (LoginRequestDto dto, IAuthService authService, CancellationToken ct) =>
+        {
+            var result = await authService.LoginAsync(dto, ct);
+            return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(result.Error);
+        })
+        .AllowAnonymous()
+        .RequireRateLimiting("auth")
+        .WithName("Login");
+${isJwt ? `
+        app.MapPost(Router.Authentication.Refresh, async (IAuthService authService, CancellationToken ct) =>
+        {
+            var result = await authService.RefreshAsync(ct);
+            return result.IsSuccess ? Results.Ok(result.Value) : Results.Unauthorized();
+        })
+        .AllowAnonymous()
+        .RequireRateLimiting("auth")
+        .WithName("Refresh");
+` : ''}
+        app.MapPost(Router.Authentication.Logout, async (IAuthService authService, CancellationToken ct) =>
+        {
+            var result = await authService.LogoutAsync(ct);
+            return result.IsSuccess ? Results.Ok() : Results.BadRequest(result.Error);
+        })
+        .RequireAuthorization()
+        .WithName("Logout");
+
+        app.MapGet(Router.Authentication.Me, async (IAuthService authService, CancellationToken ct) =>
+        {
+            var result = await authService.GetMeAsync(ct);
+            return result.IsSuccess ? Results.Ok(result.Value) : Results.Unauthorized();
+        })
+        .RequireAuthorization()
+        .WithName("GetMe");
+
+        return app;
+    }
+}
+`;
+  }
+
+  return `using MediatR;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using ${ns}.API.Contracts;
+using ${ns}.Application.Features.Authentication.Commands.Login;
+using ${ns}.Application.Features.Authentication.Commands.Logout;
+using ${ns}.Application.Features.Authentication.Queries.GetMe;
+${isJwt ? `using ${ns}.Application.Features.Authentication.Commands.RefreshToken;\n` : ''}using ${ns}.Application.Features.Authentication.Commands.Register;
+
+namespace ${ns}.API.Endpoints.Authentication;
+
+public static class AuthEndpoints
+{
+    public static IEndpointRouteBuilder MapAuthenticationEndpoints(this IEndpointRouteBuilder app)
+    {
+        app.MapPost(Router.Authentication.Register, async (RegisterCommand command, ISender sender, CancellationToken ct) =>
+        {
+            var result = await sender.Send(command, ct);
+            return result.IsSuccess ? Results.Ok() : Results.BadRequest(result.Error);
+        })
+        .AllowAnonymous()
+        .RequireRateLimiting("auth")
+        .WithName("Register");
+
+        app.MapPost(Router.Authentication.Login, async (LoginCommand command, ISender sender, CancellationToken ct) =>
+        {
+            var result = await sender.Send(command, ct);
+            return result.IsSuccess ? Results.Ok(result.Value) : Results.BadRequest(result.Error);
+        })
+        .AllowAnonymous()
+        .RequireRateLimiting("auth")
+        .WithName("Login");
+${isJwt ? `
+        app.MapPost(Router.Authentication.Refresh, async (ISender sender, CancellationToken ct) =>
+        {
+            var result = await sender.Send(new RefreshTokenCommand(), ct);
+            return result.IsSuccess ? Results.Ok(result.Value) : Results.Unauthorized();
+        })
+        .AllowAnonymous()
+        .RequireRateLimiting("auth")
+        .WithName("Refresh");
+` : ''}
+        app.MapPost(Router.Authentication.Logout, async (ISender sender, CancellationToken ct) =>
+        {
+            var result = await sender.Send(new LogoutCommand(), ct);
+            return result.IsSuccess ? Results.Ok() : Results.BadRequest(result.Error);
+        })
+        .RequireAuthorization()
+        .WithName("Logout");
+
+        app.MapGet(Router.Authentication.Me, async (ISender sender, CancellationToken ct) =>
+        {
+            var result = await sender.Send(new GetMeQuery(), ct);
+            return result.IsSuccess ? Results.Ok(result.Value) : Results.Unauthorized();
+        })
+        .RequireAuthorization()
+        .WithName("GetMe");
+
+        return app;
+    }
+}
+`;
+}
+
+/** @param {{ ns: string, architecture: string }} ctx */
+function renderMvcAccountController({ ns, architecture }) {
+  const isServices = architecture === 'services';
+
+  if (isServices) {
+    return `using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using ${ns}.Application.Modules.Authentication.DTOs;
+using ${ns}.Application.Modules.Authentication.Interfaces;
+using ${ns}.Web.ViewModels.Account;
+
+namespace ${ns}.Web.Controllers;
+
+public sealed class AccountController : Controller
+{
+    private readonly IAuthService _authService;
+
+    public AccountController(IAuthService authService)
+    {
+        _authService = authService;
+    }
+
+    [HttpGet]
+    [AllowAnonymous]
+    public IActionResult Login(string? returnUrl = null)
+    {
+        return View(new LoginViewModel { ReturnUrl = returnUrl });
+    }
+
+    [HttpPost]
+    [AllowAnonymous]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Login(LoginViewModel model, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+        {
+            return View(model);
+        }
+
+        var result = await _authService.LoginAsync(
+            new LoginRequestDto { Email = model.Email, Password = model.Password, RememberMe = model.RememberMe },
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            ModelState.AddModelError(string.Empty, result.Error.Description ?? "Invalid login attempt.");
+            return View(model);
+        }
+
+        if (!string.IsNullOrEmpty(model.ReturnUrl) && Url.IsLocalUrl(model.ReturnUrl))
+        {
+            return Redirect(model.ReturnUrl);
+        }
+
+        return RedirectToAction("Index", "Home");
+    }
+
+    [HttpGet]
+    [AllowAnonymous]
+    public IActionResult Register()
+    {
+        return View(new RegisterViewModel());
+    }
+
+    [HttpPost]
+    [AllowAnonymous]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Register(RegisterViewModel model, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+        {
+            return View(model);
+        }
+
+        var result = await _authService.RegisterAsync(
+            new RegisterRequestDto { Email = model.Email, Password = model.Password, DisplayName = model.DisplayName },
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            ModelState.AddModelError(string.Empty, result.Error.Description ?? "Registration failed.");
+            return View(model);
+        }
+
+        return RedirectToAction(nameof(Login));
+    }
+
+    [HttpPost]
+    [Authorize]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Logout(CancellationToken cancellationToken)
+    {
+        await _authService.LogoutAsync(cancellationToken);
+        return RedirectToAction("Index", "Home");
+    }
+}
+`;
+  }
+
+  return `using MediatR;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using ${ns}.Application.Features.Authentication.Commands.Login;
+using ${ns}.Application.Features.Authentication.Commands.Logout;
+using ${ns}.Application.Features.Authentication.Commands.Register;
+using ${ns}.Web.ViewModels.Account;
+
+namespace ${ns}.Web.Controllers;
+
+public sealed class AccountController : Controller
+{
+    private readonly ISender _sender;
+
+    public AccountController(ISender sender)
+    {
+        _sender = sender;
+    }
+
+    [HttpGet]
+    [AllowAnonymous]
+    public IActionResult Login(string? returnUrl = null)
+    {
+        return View(new LoginViewModel { ReturnUrl = returnUrl });
+    }
+
+    [HttpPost]
+    [AllowAnonymous]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Login(LoginViewModel model, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+        {
+            return View(model);
+        }
+
+        var result = await _sender.Send(
+            new LoginCommand { Email = model.Email, Password = model.Password, RememberMe = model.RememberMe },
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            ModelState.AddModelError(string.Empty, result.Error.Description ?? "Invalid login attempt.");
+            return View(model);
+        }
+
+        if (!string.IsNullOrEmpty(model.ReturnUrl) && Url.IsLocalUrl(model.ReturnUrl))
+        {
+            return Redirect(model.ReturnUrl);
+        }
+
+        return RedirectToAction("Index", "Home");
+    }
+
+    [HttpGet]
+    [AllowAnonymous]
+    public IActionResult Register()
+    {
+        return View(new RegisterViewModel());
+    }
+
+    [HttpPost]
+    [AllowAnonymous]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Register(RegisterViewModel model, CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+        {
+            return View(model);
+        }
+
+        var result = await _sender.Send(
+            new RegisterCommand { Email = model.Email, Password = model.Password, DisplayName = model.DisplayName },
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            ModelState.AddModelError(string.Empty, result.Error.Description ?? "Registration failed.");
+            return View(model);
+        }
+
+        return RedirectToAction(nameof(Login));
+    }
+
+    [HttpPost]
+    [Authorize]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Logout(CancellationToken cancellationToken)
+    {
+        await _sender.Send(new LogoutCommand(), cancellationToken);
+        return RedirectToAction("Index", "Home");
+    }
+}
+`;
+}
+
+/** @param {{ ns: string }} ctx */
+function renderLoginViewModel({ ns }) {
+  return `using System.ComponentModel.DataAnnotations;
+
+namespace ${ns}.Web.ViewModels.Account;
+
+public sealed class LoginViewModel
+{
+    [Required]
+    [EmailAddress]
+    public string Email { get; set; } = string.Empty;
+
+    [Required]
+    [DataType(DataType.Password)]
+    public string Password { get; set; } = string.Empty;
+
+    public bool RememberMe { get; set; }
+
+    public string? ReturnUrl { get; set; }
+}
+`;
+}
+
+/** @param {{ ns: string }} ctx */
+function renderRegisterViewModel({ ns }) {
+  return `using System.ComponentModel.DataAnnotations;
+
+namespace ${ns}.Web.ViewModels.Account;
+
+public sealed class RegisterViewModel
+{
+    [Required]
+    [EmailAddress]
+    public string Email { get; set; } = string.Empty;
+
+    [Required]
+    [StringLength(100, MinimumLength = 8)]
+    [DataType(DataType.Password)]
+    public string Password { get; set; } = string.Empty;
+
+    [DataType(DataType.Password)]
+    [Compare("Password", ErrorMessage = "The password and confirmation password do not match.")]
+    public string ConfirmPassword { get; set; } = string.Empty;
+
+    public string DisplayName { get; set; } = string.Empty;
+}
+`;
+}
+
+/** @param {{ ns: string }} ctx */
+function renderLoginView({ ns }) {
+  return `@model ${ns}.Web.ViewModels.Account.LoginViewModel
+@{
+    ViewData["Title"] = "Log In";
+}
+
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <h2 class="mb-4">Log In</h2>
+        <form asp-action="Login" method="post">
+            <input type="hidden" asp-for="ReturnUrl" />
+            <div asp-validation-summary="All" class="text-danger mb-3"></div>
+            <div class="mb-3">
+                <label asp-for="Email" class="form-label"></label>
+                <input asp-for="Email" class="form-control" />
+                <span asp-validation-for="Email" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Password" class="form-label"></label>
+                <input asp-for="Password" class="form-control" />
+                <span asp-validation-for="Password" class="text-danger"></span>
+            </div>
+            <div class="mb-3 form-check">
+                <input asp-for="RememberMe" class="form-check-input" />
+                <label asp-for="RememberMe" class="form-check-label"></label>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Log In</button>
+        </form>
+    </div>
+</div>
+`;
+}
+
+/** @param {{ ns: string }} ctx */
+function renderRegisterView({ ns }) {
+  return `@model ${ns}.Web.ViewModels.Account.RegisterViewModel
+@{
+    ViewData["Title"] = "Register";
+}
+
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <h2 class="mb-4">Create Account</h2>
+        <form asp-action="Register" method="post">
+            <div asp-validation-summary="All" class="text-danger mb-3"></div>
+            <div class="mb-3">
+                <label asp-for="DisplayName" class="form-label"></label>
+                <input asp-for="DisplayName" class="form-control" />
+                <span asp-validation-for="DisplayName" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Email" class="form-label"></label>
+                <input asp-for="Email" class="form-control" />
+                <span asp-validation-for="Email" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Password" class="form-label"></label>
+                <input asp-for="Password" class="form-control" />
+                <span asp-validation-for="Password" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="ConfirmPassword" class="form-label"></label>
+                <input asp-for="ConfirmPassword" class="form-control" />
+                <span asp-validation-for="ConfirmPassword" class="text-danger"></span>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Register</button>
+        </form>
+    </div>
+</div>
+`;
+}
+
+/** @param {{ ns: string }} ctx */
+function renderRazorLoginPage({ ns }) {
+  return `@page
+@model ${ns}.Web.Pages.Account.LoginModel
+@{
+    ViewData["Title"] = "Log In";
+}
+
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <h2 class="mb-4">Log In</h2>
+        <form method="post">
+            <div asp-validation-summary="All" class="text-danger mb-3"></div>
+            <div class="mb-3">
+                <label asp-for="Input.Email" class="form-label"></label>
+                <input asp-for="Input.Email" class="form-control" />
+                <span asp-validation-for="Input.Email" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.Password" class="form-label"></label>
+                <input asp-for="Input.Password" class="form-control" />
+                <span asp-validation-for="Input.Password" class="text-danger"></span>
+            </div>
+            <div class="mb-3 form-check">
+                <input asp-for="Input.RememberMe" class="form-check-input" />
+                <label asp-for="Input.RememberMe" class="form-check-label"></label>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Log In</button>
+        </form>
+    </div>
+</div>
+`;
+}
+
+/** @param {{ ns: string, architecture: string }} ctx */
+function renderRazorLoginPageModel({ ns, architecture }) {
+  const isServices = architecture === 'services';
+
+  if (isServices) {
+    return `using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using ${ns}.Application.Modules.Authentication.DTOs;
+using ${ns}.Application.Modules.Authentication.Interfaces;
+
+namespace ${ns}.Web.Pages.Account;
+
+public sealed class LoginModel : PageModel
+{
+    private readonly IAuthService _authService;
+
+    public LoginModel(IAuthService authService)
+    {
+        _authService = authService;
+    }
+
+    [BindProperty]
+    public InputModel Input { get; set; } = new();
+
+    public string? ReturnUrl { get; set; }
+
+    public class InputModel
+    {
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = string.Empty;
+
+        [Required]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = string.Empty;
+
+        public bool RememberMe { get; set; }
+    }
+
+    public void OnGet(string? returnUrl = null)
+    {
+        ReturnUrl = returnUrl;
+    }
+
+    public async Task<IActionResult> OnPostAsync(string? returnUrl = null, CancellationToken cancellationToken = default)
+    {
+        ReturnUrl = returnUrl;
+        if (!ModelState.IsValid)
+        {
+            return Page();
+        }
+
+        var result = await _authService.LoginAsync(
+            new LoginRequestDto { Email = Input.Email, Password = Input.Password, RememberMe = Input.RememberMe },
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            ModelState.AddModelError(string.Empty, result.Error.Description ?? "Invalid login attempt.");
+            return Page();
+        }
+
+        if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
+        {
+            return Redirect(returnUrl);
+        }
+
+        return RedirectToPage("/Index");
+    }
+}
+`;
+  }
+
+  return `using System.ComponentModel.DataAnnotations;
+using MediatR;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using ${ns}.Application.Features.Authentication.Commands.Login;
+
+namespace ${ns}.Web.Pages.Account;
+
+public sealed class LoginModel : PageModel
+{
+    private readonly ISender _sender;
+
+    public LoginModel(ISender sender)
+    {
+        _sender = sender;
+    }
+
+    [BindProperty]
+    public InputModel Input { get; set; } = new();
+
+    public string? ReturnUrl { get; set; }
+
+    public class InputModel
+    {
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = string.Empty;
+
+        [Required]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = string.Empty;
+
+        public bool RememberMe { get; set; }
+    }
+
+    public void OnGet(string? returnUrl = null)
+    {
+        ReturnUrl = returnUrl;
+    }
+
+    public async Task<IActionResult> OnPostAsync(string? returnUrl = null, CancellationToken cancellationToken = default)
+    {
+        ReturnUrl = returnUrl;
+        if (!ModelState.IsValid)
+        {
+            return Page();
+        }
+
+        var result = await _sender.Send(
+            new LoginCommand { Email = Input.Email, Password = Input.Password, RememberMe = Input.RememberMe },
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            ModelState.AddModelError(string.Empty, result.Error.Description ?? "Invalid login attempt.");
+            return Page();
+        }
+
+        if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
+        {
+            return Redirect(returnUrl);
+        }
+
+        return RedirectToPage("/Index");
+    }
+}
+`;
+}
+
+/** @param {{ ns: string }} ctx */
+function renderRazorRegisterPage({ ns }) {
+  return `@page
+@model ${ns}.Web.Pages.Account.RegisterModel
+@{
+    ViewData["Title"] = "Register";
+}
+
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <h2 class="mb-4">Create Account</h2>
+        <form method="post">
+            <div asp-validation-summary="All" class="text-danger mb-3"></div>
+            <div class="mb-3">
+                <label asp-for="Input.DisplayName" class="form-label"></label>
+                <input asp-for="Input.DisplayName" class="form-control" />
+                <span asp-validation-for="Input.DisplayName" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.Email" class="form-label"></label>
+                <input asp-for="Input.Email" class="form-control" />
+                <span asp-validation-for="Input.Email" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.Password" class="form-label"></label>
+                <input asp-for="Input.Password" class="form-control" />
+                <span asp-validation-for="Input.Password" class="text-danger"></span>
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.ConfirmPassword" class="form-label"></label>
+                <input asp-for="Input.ConfirmPassword" class="form-control" />
+                <span asp-validation-for="Input.ConfirmPassword" class="text-danger"></span>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Register</button>
+        </form>
+    </div>
+</div>
+`;
+}
+
+/** @param {{ ns: string, architecture: string }} ctx */
+function renderRazorRegisterPageModel({ ns, architecture }) {
+  const isServices = architecture === 'services';
+
+  if (isServices) {
+    return `using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using ${ns}.Application.Modules.Authentication.DTOs;
+using ${ns}.Application.Modules.Authentication.Interfaces;
+
+namespace ${ns}.Web.Pages.Account;
+
+public sealed class RegisterModel : PageModel
+{
+    private readonly IAuthService _authService;
+
+    public RegisterModel(IAuthService authService)
+    {
+        _authService = authService;
+    }
+
+    [BindProperty]
+    public InputModel Input { get; set; } = new();
+
+    public class InputModel
+    {
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = string.Empty;
+
+        [Required]
+        [StringLength(100, MinimumLength = 8)]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = string.Empty;
+
+        [DataType(DataType.Password)]
+        [Compare("Password", ErrorMessage = "The password and confirmation password do not match.")]
+        public string ConfirmPassword { get; set; } = string.Empty;
+
+        public string DisplayName { get; set; } = string.Empty;
+    }
+
+    public void OnGet() { }
+
+    public async Task<IActionResult> OnPostAsync(CancellationToken cancellationToken = default)
+    {
+        if (!ModelState.IsValid)
+        {
+            return Page();
+        }
+
+        var result = await _authService.RegisterAsync(
+            new RegisterRequestDto { Email = Input.Email, Password = Input.Password, DisplayName = Input.DisplayName },
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            ModelState.AddModelError(string.Empty, result.Error.Description ?? "Registration failed.");
+            return Page();
+        }
+
+        return RedirectToPage("/Account/Login");
+    }
+}
+`;
+  }
+
+  return `using System.ComponentModel.DataAnnotations;
+using MediatR;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using ${ns}.Application.Features.Authentication.Commands.Register;
+
+namespace ${ns}.Web.Pages.Account;
+
+public sealed class RegisterModel : PageModel
+{
+    private readonly ISender _sender;
+
+    public RegisterModel(ISender sender)
+    {
+        _sender = sender;
+    }
+
+    [BindProperty]
+    public InputModel Input { get; set; } = new();
+
+    public class InputModel
+    {
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = string.Empty;
+
+        [Required]
+        [StringLength(100, MinimumLength = 8)]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = string.Empty;
+
+        [DataType(DataType.Password)]
+        [Compare("Password", ErrorMessage = "The password and confirmation password do not match.")]
+        public string ConfirmPassword { get; set; } = string.Empty;
+
+        public string DisplayName { get; set; } = string.Empty;
+    }
+
+    public void OnGet() { }
+
+    public async Task<IActionResult> OnPostAsync(CancellationToken cancellationToken = default)
+    {
+        if (!ModelState.IsValid)
+        {
+            return Page();
+        }
+
+        var result = await _sender.Send(
+            new RegisterCommand { Email = Input.Email, Password = Input.Password, DisplayName = Input.DisplayName },
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            ModelState.AddModelError(string.Empty, result.Error.Description ?? "Registration failed.");
+            return Page();
+        }
+
+        return RedirectToPage("/Account/Login");
+    }
+}
+`;
+}
+
+/** @param {{ ns: string }} ctx */
+function renderRazorLogoutPage({ ns }) {
+  return `@page
+@model ${ns}.Web.Pages.Account.LogoutModel
+@{
+    ViewData["Title"] = "Log out";
+}
+
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <h2 class="mb-4">Log Out</h2>
+        <form method="post">
+            <p>Are you sure you want to log out?</p>
+            <button type="submit" class="btn btn-danger w-100">Log Out</button>
+        </form>
+    </div>
+</div>
+`;
+}
+
+/** @param {{ ns: string, architecture: string }} ctx */
+function renderRazorLogoutPageModel({ ns, architecture }) {
+  const isServices = architecture === 'services';
+
+  if (isServices) {
+    return `using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using ${ns}.Application.Modules.Authentication.Interfaces;
+
+namespace ${ns}.Web.Pages.Account;
+
+public sealed class LogoutModel : PageModel
+{
+    private readonly IAuthService _authService;
+
+    public LogoutModel(IAuthService authService)
+    {
+        _authService = authService;
+    }
+
+    public async Task<IActionResult> OnPostAsync(CancellationToken cancellationToken = default)
+    {
+        await _authService.LogoutAsync(cancellationToken);
+        return RedirectToPage("/Index");
+    }
+}
+`;
+  }
+
+  return `using MediatR;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using ${ns}.Application.Features.Authentication.Commands.Logout;
+
+namespace ${ns}.Web.Pages.Account;
+
+public sealed class LogoutModel : PageModel
+{
+    private readonly ISender _sender;
+
+    public LogoutModel(ISender sender)
+    {
+        _sender = sender;
+    }
+
+    public async Task<IActionResult> OnPostAsync(CancellationToken cancellationToken = default)
+    {
+        await _sender.Send(new LogoutCommand(), cancellationToken);
+        return RedirectToPage("/Index");
     }
 }
 `;

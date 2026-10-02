@@ -122,7 +122,7 @@ test('Services + EF Core still has no MediatR types', () => {
   for (const file of files) {
     assert.doesNotMatch(file.contents, /MediatR|IRequest\b|IRequestHandler|ISender/);
   }
-  assert.ok(paths(files).some((item) => item.endsWith('Interfaces/IProductsService.cs')));
+  assert.ok(paths(files).some((item) => item.endsWith('Interfaces/IProductService.cs')));
 });
 
 test('EF Core + Dapper hybrid uses EF writes and Dapper query repository', () => {

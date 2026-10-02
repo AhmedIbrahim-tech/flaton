@@ -8,14 +8,8 @@ import { assertBackendCompatibility, shouldGenerateIdentityArtifacts } from '../
 import {
   renderApplicationServiceExtensions,
   renderApiServiceExtensions,
+  renderWebServiceExtensions,
 } from '../feature-generator/backend/clean-architecture.js';
-
-const PROJECTS = [
-  { folder: 'Domain', template: 'classlib', log: 'Domain created' },
-  { folder: 'Application', template: 'classlib', log: 'Application created' },
-  { folder: 'Infrastructure', template: 'classlib', log: 'Infrastructure created' },
-  { folder: 'API', template: 'webapi', log: 'API created' },
-];
 
 /**
  * @param {object} options
@@ -31,6 +25,7 @@ export async function generateBackend(options) {
   await ensureDir(backendDir);
 
   const architecture = backend.architecture ?? options.architecture ?? 'cqrs-mediatr';
+  const presentation = backend.presentation ?? options.presentation ?? 'controllers';
   const mapping = backend.mapping ?? options.mapping ?? 'manual';
   const orm = backend.orm ?? options.orm ?? 'efcore';
   const database = backend.database ?? options.database ?? (options.sqlServer === false ? 'sqlite' : 'sqlserver');
@@ -39,8 +34,15 @@ export async function generateBackend(options) {
   const realtime = backend.realtime ?? options.realtime ?? 'none';
   const authMode = backend.authentication ?? options.authMode ?? (options.auth ? 'identity-jwt' : 'none');
 
+  const isWebProject = presentation === 'mvc' || presentation === 'razor-pages';
+  const presentationFolder = isWebProject ? 'Web' : 'API';
+  let presentationTemplate = 'webapi';
+  if (presentation === 'mvc') presentationTemplate = 'mvc';
+  else if (presentation === 'razor-pages') presentationTemplate = 'webapp';
+
   const backendConfig = {
     architecture,
+    presentation,
     mapping,
     orm,
     database,
@@ -50,9 +52,16 @@ export async function generateBackend(options) {
     authMode,
   };
 
-  assertBackendCompatibility({ orm, authentication: authMode });
+  assertBackendCompatibility({ orm, authentication: authMode, presentation });
 
-  for (const project of PROJECTS) {
+  const projects = [
+    { folder: 'Domain', template: 'classlib', log: 'Domain created' },
+    { folder: 'Application', template: 'classlib', log: 'Application created' },
+    { folder: 'Infrastructure', template: 'classlib', log: 'Infrastructure created' },
+    { folder: presentationFolder, template: presentationTemplate, log: `${presentationFolder} created` },
+  ];
+
+  for (const project of projects) {
     const args = [
       'new',
       project.template,
@@ -66,7 +75,12 @@ export async function generateBackend(options) {
     ];
 
     if (project.template === 'webapi') {
-      args.push('--use-controllers', '--no-openapi', '--auth', 'None');
+      if (presentation === 'controllers') {
+        args.push('--use-controllers');
+      }
+      args.push('--no-openapi', '--auth', 'None');
+    } else if (project.template === 'mvc' || project.template === 'webapp') {
+      args.push('--auth', 'None');
     }
 
     args.push('--no-restore');
@@ -89,15 +103,16 @@ export async function generateBackend(options) {
     logger.success(project.log);
   }
 
-  addProjectReferences(backendDir);
-  addBackendPackages(backendDir, backendConfig);
+  addProjectReferences(backendDir, presentationFolder);
+  addBackendPackages(backendDir, backendConfig, presentationFolder);
   await overlayBackendTemplates(options, backendConfig, backendDir);
 }
 
 /**
  * @param {string} cwd
+ * @param {string} presentationFolder
  */
-function addProjectReferences(cwd) {
+function addProjectReferences(cwd, presentationFolder) {
   runCommand(
     'dotnet',
     ['add', path.join('Application', 'Application.csproj'), 'reference', path.join('Domain', 'Domain.csproj')],
@@ -120,12 +135,12 @@ function addProjectReferences(cwd) {
     'dotnet',
     [
       'add',
-      path.join('API', 'API.csproj'),
+      path.join(presentationFolder, `${presentationFolder}.csproj`),
       'reference',
       path.join('Application', 'Application.csproj'),
       path.join('Infrastructure', 'Infrastructure.csproj'),
     ],
-    { cwd, step: 'Reference API → Application, Infrastructure' },
+    { cwd, step: `Reference ${presentationFolder} → Application, Infrastructure` },
   );
 }
 
@@ -133,7 +148,7 @@ function addProjectReferences(cwd) {
  * @param {string} cwd
  * @param {object} config
  */
-function addBackendPackages(cwd, config) {
+function addBackendPackages(cwd, config, presentationFolder = 'API') {
   // 1. Application Layer Packages
   const applicationPackages = [
     'FluentValidation',
@@ -152,6 +167,10 @@ function addBackendPackages(cwd, config) {
 
   if (config.orm === 'efcore' || config.orm === 'efcore-dapper') {
     applicationPackages.push('Microsoft.EntityFrameworkCore');
+  }
+
+  if (shouldGenerateIdentityArtifacts(config.authMode)) {
+    applicationPackages.push('Microsoft.AspNetCore.Authorization');
   }
 
   addPackages(cwd, path.join('Application', 'Application.csproj'), applicationPackages);
@@ -203,22 +222,27 @@ function addBackendPackages(cwd, config) {
 
   addPackages(cwd, path.join('Infrastructure', 'Infrastructure.csproj'), infrastructurePackages);
 
-  // 3. API Layer Packages
-  const apiPackages = ['Swashbuckle.AspNetCore'];
+  // 3. Presentation Layer Packages
+  const presentationPackages = [];
 
-  if (config.logging === 'serilog') {
-    apiPackages.push('Serilog.AspNetCore');
+  if (presentationFolder === 'API') {
+    presentationPackages.push('Swashbuckle.AspNetCore');
+    if (config.authMode === 'identity-jwt') {
+      presentationPackages.push('Microsoft.AspNetCore.Authentication.JwtBearer', 'System.IdentityModel.Tokens.Jwt');
+    }
   }
 
-  if (config.authMode === 'identity-jwt') {
-    apiPackages.push('Microsoft.AspNetCore.Authentication.JwtBearer', 'System.IdentityModel.Tokens.Jwt');
+  if (config.logging === 'serilog') {
+    presentationPackages.push('Serilog.AspNetCore');
   }
 
   if (config.backgroundJobs === 'hangfire') {
-    apiPackages.push('Hangfire.AspNetCore');
+    presentationPackages.push('Hangfire.AspNetCore');
   }
 
-  addPackages(cwd, path.join('API', 'API.csproj'), apiPackages);
+  if (presentationPackages.length > 0) {
+    addPackages(cwd, path.join(presentationFolder, `${presentationFolder}.csproj`), presentationPackages);
+  }
 }
 
 /**
@@ -245,6 +269,9 @@ async function removeObsoleteArchitectureFiles(backendDir) {
     path.join('Infrastructure', 'DependencyInjection.cs'),
     path.join('Infrastructure', 'DependencyInjection.Generated.g.cs'),
     path.join('Infrastructure', 'DependencyInjection.Modules.g.cs'),
+    path.join('Domain', 'ValueObjects', 'ValueObject.cs'),
+    path.join('Domain', 'DomainEvents', 'IDomainEvent.cs'),
+    path.join('Domain', 'Specifications', 'ISpecification.cs'),
   ];
 
   for (const relative of obsolete) {
@@ -258,6 +285,9 @@ async function removeObsoleteArchitectureFiles(backendDir) {
     path.join('API', 'Endpoints'),
     path.join('API', 'Routing'),
     path.join('API', 'ExceptionHandling'),
+    path.join('Domain', 'ValueObjects'),
+    path.join('Domain', 'DomainEvents'),
+    path.join('Domain', 'Specifications'),
   ]) {
     const absolute = path.join(backendDir, relativeDir);
     try {
@@ -278,6 +308,9 @@ async function removeObsoleteArchitectureFiles(backendDir) {
  */
 async function overlayBackendTemplates(options, config, backendDir) {
   const pascalName = options.pascalName;
+  const presentation = config.presentation ?? 'controllers';
+  const isWebProject = presentation === 'mvc' || presentation === 'razor-pages';
+  const presentationFolder = isWebProject ? 'Web' : 'API';
 
   // Connection strings based on database
   let connectionString = `Server=localhost;Database=${pascalName};Trusted_Connection=True;TrustServerCertificate=True;MultipleActiveResultSets=True`;
@@ -290,18 +323,45 @@ async function overlayBackendTemplates(options, config, backendDir) {
   }
 
   const replacements = {
+    __PASCAL_NAME__: pascalName,
     ...options.replacements,
     __CONNECTION_STRING__: connectionString,
   };
 
   await copyTemplate(path.join(templatesRoot(), 'backend'), backendDir, replacements);
+
+  if (isWebProject) {
+    await fs.rm(path.join(backendDir, 'API'), { recursive: true, force: true });
+    await ensureDir(path.join(backendDir, 'Web', 'DependencyInjection'));
+    if (presentation === 'mvc') {
+      await ensureDir(path.join(backendDir, 'Web', 'ViewModels'));
+      await ensureDir(path.join(backendDir, 'Web', 'Controllers'));
+      await ensureDir(path.join(backendDir, 'Web', 'Views'));
+    } else {
+      await ensureDir(path.join(backendDir, 'Web', 'Models'));
+      await ensureDir(path.join(backendDir, 'Web', 'Pages'));
+    }
+  } else {
+    if (presentation === 'minimal-api') {
+      await fs.rm(path.join(backendDir, 'API', 'Controllers'), { recursive: true, force: true });
+      await ensureDir(path.join(backendDir, 'API', 'Endpoints'));
+      await writeFile(path.join(backendDir, 'API', 'Endpoints', '.gitkeep'), '\n');
+    } else {
+      await removeFilesMatching(path.join(backendDir, 'API', 'Endpoints'), () => true);
+      await ensureDir(path.join(backendDir, 'API', 'Controllers'));
+    }
+    await ensureDir(path.join(backendDir, 'API', 'Filters'));
+    await ensureDir(path.join(backendDir, 'API', 'Attributes'));
+  }
+
   await removeObsoleteArchitectureFiles(backendDir);
-  await removeFilesMatching(path.join(backendDir, 'API', 'Endpoints'), () => true);
-  await ensureDir(path.join(backendDir, 'API', 'Filters'));
-  await ensureDir(path.join(backendDir, 'API', 'Attributes'));
+  await ensureDir(path.join(backendDir, 'Domain', 'Entities'));
 
   if (config.architecture === 'services') {
-    await removeFilesMatching(path.join(backendDir, 'Application', 'Behaviors'), () => true);
+    await fs.rm(path.join(backendDir, 'Application', 'Behaviors'), { recursive: true, force: true });
+    await fs.rm(path.join(backendDir, 'Application', 'Features'), { recursive: true, force: true });
+    await ensureDir(path.join(backendDir, 'Application', 'Modules'));
+    await writeFile(path.join(backendDir, 'Application', 'Modules', '.gitkeep'), '\n');
   }
 
   if (config.orm === 'dapper') {
@@ -319,21 +379,36 @@ async function overlayBackendTemplates(options, config, backendDir) {
     await removeFilesMatching(path.join(backendDir, 'Infrastructure', 'Authentication'), () => true);
   }
 
+  // Ensure FrameworkReference in Infrastructure.csproj if identity is enabled
+  if (shouldGenerateIdentityArtifacts(config.authMode) && config.orm !== 'dapper') {
+    const infraCsprojPath = path.join(backendDir, 'Infrastructure', 'Infrastructure.csproj');
+    if (await pathExists(infraCsprojPath)) {
+      let contents = await fs.readFile(infraCsprojPath, 'utf8');
+      if (!contents.includes('Microsoft.AspNetCore.App')) {
+        contents = contents.replace(
+          /<\/Project>/,
+          `  <ItemGroup>\n    <FrameworkReference Include="Microsoft.AspNetCore.App" />\n  </ItemGroup>\n</Project>`,
+        );
+        await writeFile(infraCsprojPath, contents);
+      }
+    }
+  }
+
   // Write tailored appsettings.json
-  await writeAppSettings(backendDir, pascalName, connectionString, config);
+  await writeAppSettings(backendDir, pascalName, connectionString, config, presentationFolder);
 
   await writeInfrastructureDi(backendDir, pascalName, config);
   await writeApplicationDi(backendDir, pascalName, config);
-  await writeApiDi(backendDir, pascalName, config);
-  await writeProgramCs(backendDir, pascalName, config);
+  await writePresentationDi(backendDir, pascalName, config, presentationFolder);
+  await writePresentationProgramCs(backendDir, pascalName, config, presentationFolder);
 
   // If Dapper is selected, write IDbConnectionFactory
   if (config.orm === 'dapper' || config.orm === 'efcore-dapper') {
     await writeDapperConnectionFactory(backendDir, pascalName, config);
   }
 
-  // If SignalR is selected, write AppHub
-  if (config.realtime === 'signalr') {
+  // If SignalR is selected and API project, write AppHub
+  if (config.realtime === 'signalr' && presentationFolder === 'API') {
     await writeSignalRHub(backendDir, pascalName);
   }
 }
@@ -343,21 +418,26 @@ async function overlayBackendTemplates(options, config, backendDir) {
  * @param {string} pascalName
  * @param {string} connectionString
  * @param {object} config
+ * @param {string} presentationFolder
  */
-async function writeAppSettings(targetDir, pascalName, connectionString, config) {
+async function writeAppSettings(targetDir, pascalName, connectionString, config, presentationFolder) {
+  const isWeb = presentationFolder === 'Web';
   const appSettings = {
     ConnectionStrings: {
       DefaultConnection: connectionString.replace(/\\\\/g, '\\'),
     },
-    Cors: {
+    AllowedHosts: '*',
+  };
+
+  if (!isWeb) {
+    appSettings.Cors = {
       AllowedOrigins: [
         'http://localhost:3000',
         'http://localhost:5173',
         'http://localhost:4200',
       ],
-    },
-    AllowedHosts: '*',
-  };
+    };
+  }
 
   if (config.logging === 'serilog') {
     appSettings.Serilog = {
@@ -382,7 +462,7 @@ async function writeAppSettings(targetDir, pascalName, connectionString, config)
   }
 
   await writeFile(
-    path.join(targetDir, 'API', 'appsettings.json'),
+    path.join(targetDir, presentationFolder, 'appsettings.json'),
     `${JSON.stringify(appSettings, null, 2)}\n`,
   );
 
@@ -405,7 +485,7 @@ async function writeAppSettings(targetDir, pascalName, connectionString, config)
   }
 
   await writeFile(
-    path.join(targetDir, 'API', 'appsettings.Development.json'),
+    path.join(targetDir, presentationFolder, 'appsettings.Development.json'),
     `${JSON.stringify(devSettings, null, 2)}\n`,
   );
 }
@@ -550,16 +630,41 @@ async function writeApplicationDi(targetDir, pascalName, config) {
  * @param {string} targetDir
  * @param {string} pascalName
  * @param {object} config
+ * @param {string} presentationFolder
  */
-async function writeApiDi(targetDir, pascalName, config) {
-  let extra = '';
-  if (config.realtime === 'signalr') {
-    extra = '        services.AddSignalR();\n';
+async function writePresentationDi(targetDir, pascalName, config, presentationFolder) {
+  if (presentationFolder === 'Web') {
+    await writeFile(
+      path.join(targetDir, 'Web', 'DependencyInjection', 'WebServiceExtensions.cs'),
+      renderWebServiceExtensions(pascalName, { presentation: config.presentation }),
+    );
+  } else {
+    let extra = '';
+    if (config.realtime === 'signalr') {
+      extra = '        services.AddSignalR();\n';
+    }
+    await writeFile(
+      path.join(targetDir, 'API', 'DependencyInjection', 'ApiServiceExtensions.cs'),
+      renderApiServiceExtensions(pascalName, {
+        minimalApi: config.presentation === 'minimal-api',
+        extraRegistrations: extra,
+      }),
+    );
   }
-  await writeFile(
-    path.join(targetDir, 'API', 'DependencyInjection', 'ApiServiceExtensions.cs'),
-    renderApiServiceExtensions(pascalName, { extraRegistrations: extra }),
-  );
+}
+
+/**
+ * @param {string} targetDir
+ * @param {string} pascalName
+ * @param {object} config
+ * @param {string} presentationFolder
+ */
+async function writePresentationProgramCs(targetDir, pascalName, config, presentationFolder) {
+  if (presentationFolder === 'Web') {
+    await writeWebProgramCs(targetDir, pascalName, config);
+  } else {
+    await writeApiProgramCs(targetDir, pascalName, config);
+  }
 }
 
 /**
@@ -567,7 +672,7 @@ async function writeApiDi(targetDir, pascalName, config) {
  * @param {string} pascalName
  * @param {object} config
  */
-async function writeProgramCs(targetDir, pascalName, config) {
+async function writeApiProgramCs(targetDir, pascalName, config) {
   const usings = [
     `using ${pascalName}.API.DependencyInjection;`,
     `using ${pascalName}.Application.DependencyInjection;`,
@@ -606,6 +711,9 @@ builder.Host.UseSerilog((context, services, configuration) =>
   }
 
   const distinctUsings = [...new Set(usings)].join('\n');
+  const controllerMapping = config.presentation === 'controllers'
+    ? 'app.MapControllers();\n'
+    : '';
 
   const content = `${distinctUsings}
 
@@ -632,11 +740,89 @@ if (!app.Environment.IsDevelopment())
 
 app.UseCors("Client");
 app.MapHealthChecks("/health");
-${hangfireEndpoint}${signalrEndpoint}app.MapControllers();
-app.Run();
+${hangfireEndpoint}${signalrEndpoint}${controllerMapping}app.Run();
 `;
 
   await writeFile(path.join(targetDir, 'API', 'Program.cs'), content);
+}
+
+/**
+ * @param {string} targetDir
+ * @param {string} pascalName
+ * @param {object} config
+ */
+async function writeWebProgramCs(targetDir, pascalName, config) {
+  const usings = [
+    `using ${pascalName}.Application.DependencyInjection;`,
+    `using ${pascalName}.Infrastructure.DependencyInjection;`,
+    `using ${pascalName}.Web.DependencyInjection;`,
+  ];
+
+  if (config.logging === 'serilog') {
+    usings.push('using Serilog;');
+  }
+
+  let serilogBuilder = '';
+  let serilogMiddleware = '';
+  if (config.logging === 'serilog') {
+    serilogBuilder = `
+builder.Host.UseSerilog((context, services, configuration) =>
+{
+    configuration
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext()
+        .WriteTo.Console();
+});
+`;
+    serilogMiddleware = 'app.UseSerilogRequestLogging();\n';
+  }
+
+  let hangfireEndpoint = '';
+  if (config.backgroundJobs === 'hangfire') {
+    usings.push('using Hangfire;');
+    hangfireEndpoint = 'app.UseHangfireDashboard("/hangfire");\n';
+  }
+
+  const isRazor = config.presentation === 'razor-pages';
+  const routingEndpoint = isRazor
+    ? 'app.MapRazorPages();\n'
+    : `app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Home}/{action=Index}/{id?}");\n`;
+
+  const exceptionPath = isRazor ? '/Error' : '/Home/Error';
+
+  const distinctUsings = [...new Set(usings)].join('\n');
+
+  const content = `${distinctUsings}
+
+var builder = WebApplication.CreateBuilder(args);
+${serilogBuilder}
+builder.Services.AddApplication();
+builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddWebServices(builder.Configuration);
+
+var app = builder.Build();
+
+${serilogMiddleware}
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("${exceptionPath}");
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+
+app.UseRouting();
+
+app.UseAuthorization();
+${hangfireEndpoint}
+${routingEndpoint}app.Run();
+`;
+
+  await writeFile(path.join(targetDir, 'Web', 'Program.cs'), content);
 }
 
 /**

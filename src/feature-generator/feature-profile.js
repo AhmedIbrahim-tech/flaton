@@ -35,7 +35,7 @@ export function resolveBackendAuthentication(input = {}) {
  * @returns {'manual' | 'automapper'}
  */
 export function resolveBackendMapping(input = {}) {
-  const value = input.mapping ?? input.manifest?.backend?.mapping ?? 'manual';
+  const value = input.manifest?.backend?.mapping ?? input.backend?.mapping ?? input.mapping ?? 'manual';
   return value === 'automapper' ? 'automapper' : 'manual';
 }
 

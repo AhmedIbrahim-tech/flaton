@@ -1,6 +1,7 @@
 const RESET = '\x1b[0m';
 const GREEN = '\x1b[32m';
 const RED = '\x1b[31m';
+const YELLOW = '\x1b[33m';
 const CYAN = '\x1b[36m';
 const DIM = '\x1b[2m';
 
@@ -16,6 +17,9 @@ export const logger = {
   },
   error(message) {
     write(process.stderr, '✗', message, RED);
+  },
+  warn(message) {
+    write(process.stdout, '⚠', message, YELLOW);
   },
   info(message) {
     write(process.stdout, 'i', message, CYAN);
