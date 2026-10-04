@@ -198,6 +198,6 @@ async function stripI18nImport(clientDir) {
     }
 
     const contents = await fs.readFile(mainPath, 'utf8');
-    await fs.writeFile(mainPath, contents.replace('import "@/i18n";\n', ''), 'utf8');
+    await fs.writeFile(mainPath, contents.replace(/import\s+["']@\/i18n["'];?\r?\n/g, ''), 'utf8');
   }
 }

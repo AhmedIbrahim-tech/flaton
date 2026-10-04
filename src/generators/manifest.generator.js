@@ -3,6 +3,7 @@ import { writeFile } from '../utils/filesystem.js';
 import { readPackageMeta } from '../cli/arguments.js';
 import { buildDefaultModulesBlock } from '../module-generator/module.registry.js';
 import { resolveProjectPaths } from '../utils/project-paths.js';
+import { CURRENT_DOTNET_VERSION, CURRENT_TARGET_FRAMEWORK } from '../utils/dotnet.js';
 
 /**
  * @param {object} options
@@ -49,6 +50,8 @@ export async function writeGenerationManifest(options) {
     backend: backend.enabled
       ? {
           enabled: true,
+          dotnet: backend.dotnet ?? CURRENT_DOTNET_VERSION,
+          targetFramework: backend.targetFramework ?? CURRENT_TARGET_FRAMEWORK,
           presentation: backend.presentation ?? options.presentation ?? 'controllers',
           architecture: backend.architecture ?? options.architecture ?? 'cqrs-mediatr',
           orm: backend.orm ?? options.orm ?? 'efcore',
@@ -61,6 +64,8 @@ export async function writeGenerationManifest(options) {
         }
       : {
           enabled: false,
+          dotnet: null,
+          targetFramework: null,
           presentation: null,
           architecture: null,
           orm: null,

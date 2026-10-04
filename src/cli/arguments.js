@@ -86,7 +86,6 @@ export function parseArguments(argv) {
     backend: undefined,
     presentation: undefined,
     backendType: undefined,
-    dotnet: undefined,
     architecture: undefined,
     mapping: undefined,
     orm: undefined,
@@ -201,15 +200,6 @@ export function parseArguments(argv) {
       options.presentation = normalized;
       options.backendType = normalized;
       options._explicitFlags.add('--backend-type');
-      index += 1;
-      continue;
-    }
-
-    if (arg === '--dotnet') {
-      const value = requireValue(args, index, '--dotnet');
-      const normalized = validateAndNormalizeOption('dotnet', value, '--dotnet');
-      options.dotnet = normalized;
-      options._explicitFlags.add('--dotnet');
       index += 1;
       continue;
     }
@@ -447,9 +437,8 @@ Modes:
   --backend-only                     Create Backend only project
   --frontend-only                    Create Frontend only project
 
-Backend Options:
+Backend Options (.NET backend projects target .NET 10):
   --backend-type <type>              controllers | minimal-api | mvc | razor-pages
-  --dotnet <version>                 10 | 9 | 8
   --architecture <arch>              cqrs | services
   --mapping <mapping>                manual | automapper
   --orm <orm>                        efcore | dapper | hybrid
@@ -486,13 +475,13 @@ Examples:
   ${bin} my-app --type backend --orm efcore --db postgresql
 
   # Non-interactive Backend
-  ${bin} my-app --type backend --backend-type controllers --architecture cqrs --dotnet 10 --mapping manual --orm efcore --db postgresql --auth jwt --signalr --hangfire --yes
+  ${bin} my-app --type backend --backend-type controllers --architecture cqrs --mapping manual --orm efcore --db postgresql --auth jwt --signalr --hangfire --yes
 
   # Non-interactive Frontend
   ${bin} my-ui --type frontend --frontend react --frontend-tooling vite --language typescript --styling tailwind --state zustand --http axios --forms rhf-zod --ui shadcn --yes
 
   # Non-interactive Full Stack
-  ${bin} my-app --type fullstack --architecture services --dotnet 10 --mapping manual --orm efcore --db postgresql --auth jwt --signalr --hangfire --frontend react --frontend-tooling vite --language typescript --styling tailwind --state zustand --http axios --forms rhf-zod --ui shadcn --yes
+  ${bin} my-app --type fullstack --architecture services --mapping manual --orm efcore --db postgresql --auth jwt --signalr --hangfire --frontend react --frontend-tooling vite --language typescript --styling tailwind --state zustand --http axios --forms rhf-zod --ui shadcn --yes
 `.trim();
 
   process.stdout.write(`${text}\n`);

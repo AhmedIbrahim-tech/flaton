@@ -183,7 +183,7 @@ function resolveModulesToInstall(options) {
     if (enabled && !ordered.includes(id)) ordered.push(id);
   };
 
-  push('auth', Boolean(modules.auth ?? options.auth));
+  push('auth', Boolean(modules.auth ?? options.auth ?? (options.backend?.authentication && options.backend.authentication !== 'none')));
   push('permissions', Boolean(modules.permissions));
   push('users', Boolean(modules.users));
   push('audit', Boolean(modules.audit));

@@ -45,7 +45,6 @@ export function normalizeBackendOptions(raw, mode) {
     logging,
     backgroundJobs,
     realtime,
-    dotnet: raw.dotnet ? String(raw.dotnet) : undefined,
   };
 }
 

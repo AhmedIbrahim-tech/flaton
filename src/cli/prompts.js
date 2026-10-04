@@ -114,8 +114,9 @@ export async function resolveOptions(parsed) {
     }
   } else if (preferencesAction === 'use-saved' && savedPreferences && !hasFlags) {
     const savedPresentation = mode === 'fullstack' ? 'controllers' : (savedPreferences.backend?.presentation ?? 'controllers');
+    const { dotnet: _ignoredDotnet, dotnetVersion: _ignoredDotnetVersion, ...cleanBackendPrefs } = savedPreferences.backend ?? {};
     backend = backendEnabled
-      ? { ...defaultBackendSelection(), ...(savedPreferences.backend ?? {}), presentation: savedPresentation }
+      ? { ...defaultBackendSelection(), ...cleanBackendPrefs, presentation: savedPresentation }
       : null;
     frontend = frontendEnabled
       ? { ...defaultFrontendSelection(), ...(savedPreferences.frontend ?? {}) }
@@ -325,7 +326,6 @@ async function resolveCustomBackend(parsed, mode = 'backend-only', savedPreferen
       backgroundJobs: norm.backgroundJobs ?? DEFAULT_OPTIONS.backgroundJobs,
       realtime: norm.realtime ?? DEFAULT_OPTIONS.realtime,
       authentication: norm.authentication ?? defaultAuth,
-      dotnet: norm.dotnet,
     };
   }
 
@@ -434,7 +434,6 @@ async function resolveCustomBackend(parsed, mode = 'backend-only', savedPreferen
     backgroundJobs,
     realtime,
     authentication,
-    dotnet: norm.dotnet,
   };
 }
 

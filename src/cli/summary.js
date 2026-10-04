@@ -1,6 +1,7 @@
 import { describeFrontend } from '../models/frontend.js';
 import { describeBackend } from '../models/backend.js';
 import { logger } from '../utils/logger.js';
+import { CURRENT_DOTNET_VERSION } from '../utils/dotnet.js';
 
 /**
  * @param {object} options
@@ -25,7 +26,7 @@ export function printGenerationSummary(options) {
     lines.push(
       '',
       `Backend (${presentationTitle}):`,
-      `  • .NET:             ${backend.dotnet ?? '10'}`,
+      `  • .NET:             .NET ${backend.dotnet ?? CURRENT_DOTNET_VERSION}`,
       `  • Architecture:     Clean Architecture (${backend.architecture === 'services' ? 'Application Services' : 'CQRS + MediatR'})`,
       `  • Data Access:      ${backend.orm === 'dapper' ? 'Dapper' : backend.orm === 'efcore-dapper' ? 'EF Core + Dapper' : 'Entity Framework Core'}`,
       `  • Database:         ${backend.database === 'postgresql' ? 'PostgreSQL' : backend.database === 'sqlite' ? 'SQLite' : 'SQL Server'}`,

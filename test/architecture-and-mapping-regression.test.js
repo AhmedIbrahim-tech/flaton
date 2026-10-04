@@ -314,7 +314,7 @@ test('5c. Manifest backend.mapping is single source of truth', () => {
   assert.equal(fallback, 'manual');
 });
 
-test('6. Default Domain structure (Services): contains Entities, Enums, Exceptions; does not contain ValueObjects, DomainEvents, Specifications', async () => {
+test('6. Default Domain structure (Services): contains Entities, Exceptions; does not contain Enums, ValueObjects, DomainEvents, Specifications', async () => {
   const dir = createTempDir('domain-structure-services-');
   try {
     await generateBackend({
@@ -329,9 +329,10 @@ test('6. Default Domain structure (Services): contains Entities, Enums, Exceptio
 
     const domainDir = path.join(dir, 'Domain');
     assert.ok(fs.existsSync(path.join(domainDir, 'Entities')), 'Domain/Entities must exist');
-    assert.ok(fs.existsSync(path.join(domainDir, 'Enums')), 'Domain/Enums must exist');
     assert.ok(fs.existsSync(path.join(domainDir, 'Exceptions')), 'Domain/Exceptions must exist');
 
+    assert.ok(!fs.existsSync(path.join(domainDir, 'Enums')), 'Domain/Enums must NOT exist by default when no enums are defined');
+    assert.ok(!fs.existsSync(path.join(domainDir, 'Enums', 'DomainEnums.cs')), 'DomainEnums.cs must NOT exist');
     assert.ok(!fs.existsSync(path.join(domainDir, 'ValueObjects')), 'Domain/ValueObjects must NOT exist by default');
     assert.ok(!fs.existsSync(path.join(domainDir, 'DomainEvents')), 'Domain/DomainEvents must NOT exist by default');
     assert.ok(!fs.existsSync(path.join(domainDir, 'Specifications')), 'Domain/Specifications must NOT exist by default');
@@ -341,7 +342,7 @@ test('6. Default Domain structure (Services): contains Entities, Enums, Exceptio
   }
 });
 
-test('7. Default Domain structure (CQRS): contains Entities, Enums, Exceptions; does not contain ValueObjects, DomainEvents, Specifications', async () => {
+test('7. Default Domain structure (CQRS): contains Entities, Exceptions; does not contain Enums, ValueObjects, DomainEvents, Specifications', async () => {
   const dir = createTempDir('domain-structure-cqrs-');
   try {
     await generateBackend({
@@ -356,9 +357,10 @@ test('7. Default Domain structure (CQRS): contains Entities, Enums, Exceptions; 
 
     const domainDir = path.join(dir, 'Domain');
     assert.ok(fs.existsSync(path.join(domainDir, 'Entities')), 'Domain/Entities must exist');
-    assert.ok(fs.existsSync(path.join(domainDir, 'Enums')), 'Domain/Enums must exist');
     assert.ok(fs.existsSync(path.join(domainDir, 'Exceptions')), 'Domain/Exceptions must exist');
 
+    assert.ok(!fs.existsSync(path.join(domainDir, 'Enums')), 'Domain/Enums must NOT exist by default when no enums are defined');
+    assert.ok(!fs.existsSync(path.join(domainDir, 'Enums', 'DomainEnums.cs')), 'DomainEnums.cs must NOT exist');
     assert.ok(!fs.existsSync(path.join(domainDir, 'ValueObjects')), 'Domain/ValueObjects must NOT exist by default');
     assert.ok(!fs.existsSync(path.join(domainDir, 'DomainEvents')), 'Domain/DomainEvents must NOT exist by default');
     assert.ok(!fs.existsSync(path.join(domainDir, 'Specifications')), 'Domain/Specifications must NOT exist by default');

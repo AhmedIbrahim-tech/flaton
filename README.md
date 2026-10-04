@@ -22,7 +22,7 @@ Current version: **4.0.0**
 ## Requirements
 
 - **Node.js** ≥ 20
-- **.NET SDK** ≥ 9.0 (for ASP.NET Core backends)
+- **.NET SDK** ≥ 10.0 (for ASP.NET Core backends)
 - **Database Engine** (SQL Server, PostgreSQL, or SQLite)
 - Optional: `dotnet ef` tools (`dotnet tool install -g dotnet-ef`)
 
@@ -148,7 +148,6 @@ npx generate-fullstack-app my-app \
   --type backend \
   --backend-type controllers \
   --architecture cqrs \
-  --dotnet 10 \
   --mapping manual \
   --orm efcore \
   --db postgresql \
@@ -178,7 +177,6 @@ npx generate-fullstack-app my-ui \
 npx generate-fullstack-app my-app \
   --type fullstack \
   --architecture services \
-  --dotnet 10 \
   --mapping manual \
   --orm efcore \
   --db postgresql \
@@ -201,11 +199,12 @@ npx generate-fullstack-app my-app \
 ## Canonical CLI Flags
 
 ### Project & Backend Options
+> **Note**: New backend projects target **.NET 10** (`net10.0`).
+
 | Flag | Values | Description |
 | :--- | :--- | :--- |
 | `--type` | `fullstack` \| `backend` \| `frontend` | Project mode |
 | `--backend-type` | `controllers` \| `minimal-api` \| `mvc` \| `razor-pages` | Presentation layer (Backend Only) |
-| `--dotnet` | `10` \| `9` \| `8` | Target .NET version |
 | `--architecture` | `cqrs` \| `services` | Application architecture |
 | `--mapping` | `manual` \| `automapper` | Object mapping strategy |
 | `--orm` | `efcore` \| `dapper` \| `hybrid` | Data access / ORM |

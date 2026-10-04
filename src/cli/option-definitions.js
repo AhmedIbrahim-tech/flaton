@@ -19,16 +19,6 @@ export const OPTION_DEFINITIONS = {
     aliases: {},
     description: 'Backend presentation type (controllers | minimal-api | mvc | razor-pages)',
   },
-  dotnet: {
-    flag: '--dotnet',
-    supported: ['10', '9', '8'],
-    aliases: {
-      'net10.0': '10',
-      'net9.0': '9',
-      'net8.0': '8',
-    },
-    description: '.NET version (10 | 9 | 8)',
-  },
   architecture: {
     flag: '--architecture',
     supported: ['cqrs', 'services'],

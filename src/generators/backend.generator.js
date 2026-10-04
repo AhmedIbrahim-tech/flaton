@@ -17,7 +17,7 @@ import {
 export async function generateBackend(options) {
   assertDotnetAvailable();
   const backend = typeof options.backend === 'object' ? options.backend : {};
-  const targetFramework = detectTargetFramework(backend.dotnet ?? options.dotnet);
+  const targetFramework = detectTargetFramework(backend.targetFramework ?? backend.dotnet ?? options.dotnet);
   const backendDir = options.backendDirectory ?? (options.paths?.backend
     ? (options.paths.backend === '.' ? options.targetDirectory : path.join(options.targetDirectory, options.paths.backend))
     : options.targetDirectory);
@@ -306,6 +306,7 @@ async function removeObsoleteArchitectureFiles(backendDir) {
     path.join('Infrastructure', 'DependencyInjection.cs'),
     path.join('Infrastructure', 'DependencyInjection.Generated.g.cs'),
     path.join('Infrastructure', 'DependencyInjection.Modules.g.cs'),
+    path.join('Domain', 'Enums', 'DomainEnums.cs'),
     path.join('Domain', 'ValueObjects', 'ValueObject.cs'),
     path.join('Domain', 'DomainEvents', 'IDomainEvent.cs'),
     path.join('Domain', 'Specifications', 'ISpecification.cs'),
@@ -322,6 +323,7 @@ async function removeObsoleteArchitectureFiles(backendDir) {
     path.join('API', 'Endpoints'),
     path.join('API', 'Routing'),
     path.join('API', 'ExceptionHandling'),
+    path.join('Domain', 'Enums'),
     path.join('Domain', 'ValueObjects'),
     path.join('Domain', 'DomainEvents'),
     path.join('Domain', 'Specifications'),
