@@ -166,7 +166,7 @@ async function maybeSaveUserPreferences(options) {
     };
 
     if (saveUserPreferences(prefData)) {
-      logger.success('Saved developer preferences globally in ~/.create-fullstack-app/config.json');
+      logger.success('Saved developer preferences globally in ~/.flatron/config.json');
     }
   }
 }

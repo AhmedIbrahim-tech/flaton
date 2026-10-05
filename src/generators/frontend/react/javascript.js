@@ -1,6 +1,6 @@
 /**
  * Conservative TypeScript-to-JavaScript conversion for generator overlays.
- * Handles the patterns used in generate-fullstack-app React templates.
+ * Handles the patterns used in Flatron React templates.
  *
  * @param {string} source
  */

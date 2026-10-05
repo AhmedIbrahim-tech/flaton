@@ -69,7 +69,7 @@ function generate(projectName, extraArgs, outputDir) {
   runCommand(
     process.execPath,
     [
-      path.join(generatorRoot, 'bin', 'generate-fullstack-app.js'),
+      path.join(generatorRoot, 'bin', 'flatron.js'),
       projectName,
       '--yes',
       '--package-manager',

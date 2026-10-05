@@ -1,7 +1,15 @@
 {
-  "name": "generate-fullstack-app",
+  "name": "flatron",
   "version": "4.0.0",
-  "description": "Generic full-stack project, feature, and production infrastructure generator for ASP.NET Core Clean Architecture with React (Next.js or Vite) or Angular clients.",
+  "description": "Clean Architecture full-stack project, feature, and production infrastructure generator for ASP.NET Core with React (Next.js or Vite) or Angular clients.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AhmedIbrahim-tech/flatron.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AhmedIbrahim-tech/flatron/issues"
+  },
+  "homepage": "https://github.com/AhmedIbrahim-tech/flatron#readme",
   "keywords": [
     "generator",
     "scaffold",
@@ -20,7 +28,7 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "generate-fullstack-app": "./bin/generate-fullstack-app.js",
+    "flatron": "./bin/flatron.js",
     "create-fullstack-feature": "./bin/create-fullstack-feature.js",
     "create-fullstack-module": "./bin/create-fullstack-module.js"
   },

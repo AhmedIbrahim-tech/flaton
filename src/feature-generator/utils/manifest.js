@@ -43,7 +43,7 @@ export async function readManifest(projectRoot) {
   const manifestPath = path.join(projectRoot, MANIFEST_NAME);
   if (!(await pathExists(manifestPath))) {
     throw new Error(
-      `Project manifest not found at "${manifestPath}". Ensure you are running this command inside a generate-fullstack-app project root.`,
+      `Project manifest not found at "${manifestPath}". Ensure you are running this command inside a Flatron project root.`,
     );
   }
   const raw = await fs.readFile(manifestPath, 'utf8');

@@ -24,7 +24,7 @@ export async function writeGeneratedReadme(options) {
 
   const sections = [];
 
-  sections.push(`# ${options.displayName}`, '', `Generated with generate-fullstack-app.`, '');
+  sections.push(`# ${options.displayName}`, '', `Generated with Flatron.`, '');
 
   sections.push('## Project Architecture', '');
   if (backend.enabled) {
@@ -115,7 +115,7 @@ export async function writeGeneratedReadme(options) {
   }
 
   const pkg = readPackageMeta();
-  sections.push('---', `Generated with generate-fullstack-app v${pkg.version}`, '');
+  sections.push('---', `Generated with Flatron v${pkg.version}`, '');
 
   await writeFile(
     path.join(options.targetDirectory, 'README.md'),

@@ -1,7 +1,7 @@
-# generate-fullstack-app
+# Flatron
 
 <p align="center">
-  <img src="hero.png" alt="generate-fullstack-app hero: generate production-ready full stack, backend-only, or frontend-only apps" width="100%" />
+  <img src="hero.png" alt="Flatron hero: generate production-ready full stack, backend-only, or frontend-only apps" width="100%" />
 </p>
 
 A flexible, production-grade project, feature, and application module generator for **ASP.NET Core Clean Architecture** backends and modern frontends (**React with Next.js or Vite**, or **Angular**).
@@ -32,7 +32,7 @@ Current version: **4.0.0**
 
 | Command | Purpose |
 | :--- | :--- |
-| `generate-fullstack-app [ProjectName]` | Interactive CLI wizard to scaffold Full Stack, Backend Only, or Frontend Only apps |
+| `flatron [ProjectName]` | Interactive CLI wizard to scaffold Full Stack, Backend Only, or Frontend Only apps |
 | `create-fullstack-feature [FeatureName]` | Generate end-to-end CRUD features (Domain, Application, API, Frontend) |
 | `create-fullstack-module [ModuleName]` | Opt into production infrastructure modules (Auth, Users, Permissions, etc.) |
 
@@ -43,15 +43,15 @@ Current version: **4.0.0**
 ### Run with `npx` (No installation needed)
 
 ```bash
-npx generate-fullstack-app MyApp
+npx flatron MyApp
 ```
 
 ### Install globally
 
 ```bash
-npm install -g generate-fullstack-app
+npm install -g flatron
 
-generate-fullstack-app MyApp
+flatron MyApp
 ```
 
 ---
@@ -64,7 +64,7 @@ Configure the stack visually, then generate with the CLI. The interactive builde
   <img src="Builder.png" alt="Interactive stack builder: project mode, architecture preview, and .fullstack-app.json output" width="100%" />
 </p>
 
-When running `generate-fullstack-app`, the CLI asks:
+When running `flatron`, the CLI asks:
 
 > **What do you want to create?**
 > 1. Full Stack (Backend + Frontend)
@@ -127,13 +127,13 @@ The generator supports three execution modes:
 ### 1. Interactive Mode
 Run the generator with just a project name to walk through the interactive wizard:
 ```bash
-npx generate-fullstack-app my-app
+npx flatron my-app
 ```
 
 ### 2. Hybrid Mode
 Provide partial configuration flags; the generator will use the supplied flags and prompt only for missing applicable options:
 ```bash
-npx generate-fullstack-app my-app \
+npx flatron my-app \
   --type backend \
   --orm efcore \
   --db postgresql
@@ -144,7 +144,7 @@ Provide full or partial flags with `--yes` to scaffold immediately with zero pro
 
 #### Non-Interactive Backend Only
 ```bash
-npx generate-fullstack-app my-app \
+npx flatron my-app \
   --type backend \
   --backend-type controllers \
   --architecture cqrs \
@@ -159,7 +159,7 @@ npx generate-fullstack-app my-app \
 
 #### Non-Interactive Frontend Only
 ```bash
-npx generate-fullstack-app my-ui \
+npx flatron my-ui \
   --type frontend \
   --frontend react \
   --frontend-tooling vite \
@@ -174,7 +174,7 @@ npx generate-fullstack-app my-ui \
 
 #### Non-Interactive Full Stack
 ```bash
-npx generate-fullstack-app my-app \
+npx flatron my-app \
   --type fullstack \
   --architecture services \
   --mapping manual \
