@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="hero.png" alt="Flatron" width="220" />
+  <img src="hero.png" alt="Flatron" width="100%" />
 </p>
 
 <h1 align="center">Flatron</h1>
@@ -10,8 +10,8 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/flatron"><img src="https://img.shields.io/npm/v/flatron.svg?style=flat&color=7c3aed" alt="npm version" /></a>
-  <a href="https://www.npmjs.com/package/flatron"><img src="https://img.shields.io/npm/dm/flatron.svg?style=flat&color=7c3aed" alt="npm downloads" /></a>
-  <a href="https://github.com/AhmedIbrahim-tech/flatron/stargazers"><img src="https://img.shields.io/github/stars/AhmedIbrahim-tech/flatron?style=flat&color=7c3aed" alt="GitHub stars" /></a>
+  <a href="https://github.com/AhmedIbrahim-tech/create-fullstack-app/stargazers"><img src="https://img.shields.io/github/stars/AhmedIbrahim-tech/create-fullstack-app?style=flat&color=7c3aed" alt="GitHub stars" /></a>
+  <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E%3D20-7c3aed.svg?style=flat" alt="node version" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-7c3aed.svg?style=flat" alt="license" /></a>
 </p>
 
