@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="hero.png" alt="Flatron" width="100%" />
+  <img src="hero.png" alt="Flatron" width="180" />
 </p>
 
 <h1 align="center">Flatron</h1>
