@@ -1,9 +1,5 @@
 # Flatron
 
-<p align="center">
-  <img src="hero.png" alt="Flatron: generate production-ready full-stack, backend-only, or frontend-only apps" width="100%" />
-</p>
-
 Flatron is a developer CLI for scaffolding production-ready **ASP.NET Core Clean Architecture** backends and modern frontends (**React with Next.js or Vite**, or **Angular**).
 
 ---
