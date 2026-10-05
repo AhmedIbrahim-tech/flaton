@@ -1,6 +1,6 @@
 {
   "name": "flatron",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Clean Architecture full-stack project, feature, and production infrastructure generator for ASP.NET Core with React (Next.js or Vite) or Angular clients.",
   "repository": {
     "type": "git",
