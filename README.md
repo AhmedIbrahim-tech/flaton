@@ -1,12 +1,25 @@
-# Flatron
+<p align="center">
+  <img src="hero.png" alt="Flatron" width="220" />
+</p>
 
-Flatron is a developer CLI for scaffolding production-ready **ASP.NET Core Clean Architecture** backends and modern frontends (**React with Next.js or Vite**, or **Angular**).
+<h1 align="center">Flatron</h1>
+
+<p align="center">
+  Build full-stack, backend, and frontend applications from one CLI.
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/flatron"><img src="https://img.shields.io/npm/v/flatron.svg?style=flat&color=7c3aed" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/flatron"><img src="https://img.shields.io/npm/dm/flatron.svg?style=flat&color=7c3aed" alt="npm downloads" /></a>
+  <a href="https://github.com/AhmedIbrahim-tech/flatron/stargazers"><img src="https://img.shields.io/github/stars/AhmedIbrahim-tech/flatron?style=flat&color=7c3aed" alt="GitHub stars" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-7c3aed.svg?style=flat" alt="license" /></a>
+</p>
 
 ---
 
 ## Quick Start
 
-Scaffold a new project in seconds:
+Create a new project instantly with the interactive wizard:
 
 ```bash
 npx flatron MyApp
@@ -16,84 +29,52 @@ Or install globally:
 
 ```bash
 npm install -g flatron
-
 flatron MyApp
 ```
 
 ---
 
-## Project Modes
+## Features
 
-Flatron supports three project modes:
-
-- **Full Stack**: Isolated backend (`Backend/`) and frontend (`Frontend/`) with a shared configuration manifest.
-- **Backend Only**: ASP.NET Core Clean Architecture API directly at the project root.
-- **Frontend Only**: Modern SPA / SSR application directly at the project root.
-
----
-
-## What's Included
-
-### Backend (.NET 10)
-- **Clean Architecture**: Domain, Application, Infrastructure, and Presentation layers
-- **Patterns**: CQRS + MediatR or Application Services
-- **Data Access**: Entity Framework Core, Dapper, or Hybrid
-- **Databases**: SQL Server, PostgreSQL, or SQLite
-- **Security & Auth**: ASP.NET Core Identity with JWT or Cookies
-- **Production Foundations**: FluentValidation, Serilog, Swagger, Health Checks, SignalR, Hangfire
-
-### Frontend
-- **Frameworks**: React (Next.js App Router / Vite SPA) or Angular
-- **Languages**: TypeScript or JavaScript
-- **Styling**: Tailwind CSS or Bootstrap
-- **State**: Redux Toolkit, Zustand, or NgRx
-- **UI Libraries**: shadcn/ui, MUI, Ant Design, or Angular Material
-- **Tooling**: React Hook Form + Zod, Axios / Fetch API client, internationalization (i18n)
+- **Clean Architecture by Default**: Modular domain, application, infrastructure, and presentation layers.
+- **Full Stack Flexibility**: Scaffold full-stack apps, standalone APIs, or modern frontend clients.
+- **Modern Ecosystem**: ASP.NET Core, React (Next.js / Vite), Angular, Tailwind CSS, EF Core, and more.
+- **Fast & Interactive**: Guided interactive prompts with support for one-line non-interactive flags (`--yes`).
 
 ---
 
-## Non-Interactive & CLI Flags
+## What Can Flatron Create?
 
-Skip prompts using `--yes` along with configuration flags:
+| Mode | Description | Key Technologies |
+| :--- | :--- | :--- |
+| **Full Stack** | Unified solution with separated `Backend/` and `Frontend/` workspaces | .NET 10 + React / Angular |
+| **Backend Only** | ASP.NET Core Clean Architecture API with CQRS or Service patterns | EF Core, Dapper, SQL Server, PostgreSQL, SQLite, JWT Auth |
+| **Frontend Only** | Modern SPA or SSR web application ready for production | Next.js, Vite (React), Angular, Tailwind CSS, shadcn/ui |
+
+---
+
+## CLI Usage
+
+Run the generator with custom options or skip prompts entirely:
 
 ```bash
-# Full Stack (Recommended defaults)
-npx flatron my-app --type fullstack --yes
+# Interactive mode
+npx flatron my-app
 
-# Backend Only with PostgreSQL
+# Non-interactive with recommended defaults
+npx flatron my-app --yes
+
+# Backend-only API with PostgreSQL and JWT auth
 npx flatron my-api --type backend --db postgresql --auth jwt --yes
 
-# Frontend Only (React + Vite + Tailwind)
+# Frontend-only app with React, Vite, and Tailwind
 npx flatron my-ui --type frontend --frontend react --frontend-tooling vite --styling tailwind --yes
 ```
 
-### Common Flags
-
-| Flag | Values / Options | Description |
-| :--- | :--- | :--- |
-| `--type` | `fullstack` \| `backend` \| `frontend` | Project creation mode |
-| `--architecture` | `cqrs` \| `services` | Backend architecture pattern |
-| `--orm` | `efcore` \| `dapper` \| `hybrid` | Data access / ORM |
-| `--db` | `sqlserver` \| `postgresql` \| `sqlite` | Database provider |
-| `--auth` | `jwt` \| `cookies` \| `none` | Authentication model |
-| `--frontend` | `react` \| `angular` | Frontend framework |
-| `--frontend-tooling` | `vite` \| `next` \| `angular-cli` | Frontend tooling |
-| `-y, --yes` | _boolean_ | Non-interactive mode (uses defaults) |
-| `-h, --help` | _boolean_ | Show help and options |
-
----
-
-## Feature & Module Generators
-
-Inside any generated project, use companion generators to scaffold features and modules:
+To see all available flags and options:
 
 ```bash
-# Generate end-to-end CRUD features
-create-fullstack-feature Product --yes --field "Name:string:required" --field "Price:decimal:required"
-
-# Add production modules (Auth, Users, Permissions, Audit, etc.)
-create-fullstack-module auth --yes
-create-fullstack-module users --yes
+npx flatron --help
 ```
 
 ---
@@ -101,11 +82,10 @@ create-fullstack-module users --yes
 ## Requirements
 
 - **Node.js** ≥ 20
-- **.NET SDK** ≥ 10.0 (for .NET backends)
-- **Database Engine** (SQL Server, PostgreSQL, or SQLite)
+- **.NET SDK** ≥ 10.0 *(for .NET backend projects)*
 
 ---
 
 ## License
 
-MIT © [Ahmed Ibrahim](https://github.com/AhmedIbrahim-tech)
+[MIT](LICENSE) © [Ahmed Ibrahim](https://github.com/AhmedIbrahim-tech)
