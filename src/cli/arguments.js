@@ -430,6 +430,13 @@ ${pkg.description}
 
 Usage:
   ${bin} <project-name> [options]
+  ${bin} create module [name] [options]
+  ${bin} create feature <name> [options]
+
+Commands:
+  ${bin} <project-name> [options]    Create a new project
+  ${bin} create module [name]        Install application module (auth, users, permissions, ...)
+  ${bin} create feature <name>       Generate a business entity feature
 
 Modes:
   --type <type>                      fullstack | backend | frontend

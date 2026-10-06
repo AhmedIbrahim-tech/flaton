@@ -9,7 +9,9 @@ import {
   getMissingDependencies,
   resolveModuleInstallOrder,
   normalizeModuleId,
+  validateModuleCompatibility,
 } from './module.registry.js';
+import { confirm } from '@inquirer/prompts';
 import {
   findProjectRoot,
   readManifest,
@@ -48,12 +50,15 @@ const MIGRATION_NAMES = {
 };
 
 /**
- * @param {string} cwd
+ * @param {string} [cwd]
  */
 export async function listModulesCli(cwd) {
+  process.stdout.write('\nAvailable Modules:\n\n');
   for (const id of listModuleIds()) {
-    process.stdout.write(`${id}\n`);
+    const mod = MODULES[id];
+    process.stdout.write(`  ${id.padEnd(16)} ${mod.description}\n`);
   }
+  process.stdout.write('\n');
 }
 
 /**
@@ -65,22 +70,19 @@ export async function printModuleStatus(cwd) {
     throw new Error('This directory is not a Flatron project.');
   }
   const manifest = await readManifest(projectRoot);
-  const labels = {
-    auth: 'Authentication',
-    users: 'Users',
-    permissions: 'Permissions',
-    audit: 'Audit',
-    notifications: 'Notifications',
-    localization: 'Localization',
-    'rich-text': 'Rich Text',
-    dashboard: 'Dashboard',
-  };
 
+  process.stdout.write('\nInstalled Modules:\n\n');
   for (const id of listModuleIds()) {
-    const enabled = isModuleEnabled(manifest, id);
-    const label = (labels[id] ?? id).padEnd(18);
-    process.stdout.write(`${label} ${enabled ? 'ENABLED' : 'DISABLED'}\n`);
+    const mod = MODULES[id];
+    const key = moduleManifestKey(id);
+    const entry = manifest.modules?.[key] ?? manifest.modules?.[id];
+    const isInstalled = Boolean(entry?.enabled);
+    const statusText = isInstalled
+      ? entry?.version || MODULE_GENERATOR_VERSION
+      : 'Not installed';
+    process.stdout.write(`  ${mod.name.padEnd(18)} ${statusText}\n`);
   }
+  process.stdout.write('\n');
 }
 
 /**
@@ -103,6 +105,12 @@ export async function generateModule(options) {
   const frontendStrategy = resolveFrontendStrategy(manifest);
   const projectName = inferProjectName(projectRoot, manifest);
 
+  // Validate module compatibility before installing
+  const compat = validateModuleCompatibility(moduleId, manifest);
+  if (!compat.compatible) {
+    throw new Error(compat.reason);
+  }
+
   if (isModuleEnabled(manifest, moduleId) && !options.force) {
     logger.info(`${MODULES[moduleId].name} is already enabled.`);
     logger.info('Pass --force to reinstall generator-owned module files.');
@@ -113,17 +121,18 @@ export async function generateModule(options) {
   if (missing.length > 0) {
     const depNames = missing.map((id) => MODULES[id].name).join(', ');
     if (options.yes) {
-      throw new Error(
-        `${MODULES[moduleId].name} requires ${depNames}. Enable those modules first (or omit --yes to be prompted).`,
+      logger.info(
+        `Auto-resolving dependencies for ${MODULES[moduleId].name}: installing ${depNames} first.`,
       );
-    }
-    const proceed = await confirm({
-      message: `${MODULES[moduleId].name} requires ${depNames}. Enable required modules first?`,
-      default: true,
-    });
-    if (!proceed) {
-      logger.info('Module installation cancelled.');
-      return { skipped: true, reason: 'missing-dependencies', moduleId, missing };
+    } else {
+      const proceed = await confirm({
+        message: `${MODULES[moduleId].name} requires ${depNames}. Enable required modules first?`,
+        default: true,
+      });
+      if (!proceed) {
+        logger.info('Module installation cancelled.');
+        return { skipped: true, reason: 'missing-dependencies', moduleId, missing };
+      }
     }
   }
 
@@ -180,16 +189,24 @@ export async function generateModule(options) {
     await createModuleMigration(projectRoot, projectName, moduleId, manifest);
   }
 
-  logger.success(`Module "${moduleId}" installed.`);
-  for (const note of allNotes) {
-    logger.info(note);
+  for (const plan of plans) {
+    logger.success(`✓ ${MODULES[plan.id]?.name ?? plan.id} installed`);
   }
-  if (!options.migration) {
+
+  if (options.verbose) {
+    for (const note of allNotes) {
+      logger.info(note);
+    }
+  }
+
+  if (!options.migration && MODULES[moduleId]?.changesDatabase) {
     const migrationName = MIGRATION_NAMES[moduleId] ?? `Add${pascal(moduleId)}`;
     logger.info(
-      `Create an EF migration when ready: create-fullstack-module ${moduleId} --migration (or dotnet ef migrations add ${migrationName}). Database update is never run automatically.`,
+      `Create an EF migration when ready: flatron create module ${moduleId} --migration (or dotnet ef migrations add ${migrationName}). Database update is never run automatically.`,
     );
   }
+
+  logger.success(`${MODULES[moduleId].name} module is ready.`);
 
   return { moduleId, plans, manifest };
 }

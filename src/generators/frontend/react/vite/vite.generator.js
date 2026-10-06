@@ -87,6 +87,8 @@ export async function generateViteFrontend(options) {
     options.replacements,
   );
 
+  await writeViteConfig(clientDir, { isTailwind, isTs });
+
   await writeReactProviders(clientDir, frontend);
 
   if (isTailwind) {
@@ -119,6 +121,50 @@ export async function generateViteFrontend(options) {
   }
 
   await finalizeReactLanguage(clientDir, frontend);
+}
+
+async function writeViteConfig(clientDir, { isTailwind, isTs }) {
+  const dest = path.join(clientDir, isTs ? 'vite.config.ts' : 'vite.config.js');
+  const tailwindImport = isTailwind ? '\nimport tailwindcss from "@tailwindcss/vite";' : '';
+  const pluginEntries = isTailwind ? 'react(), tailwindcss()' : 'react()';
+
+  const content = `import path from "node:path";
+import { fileURLToPath } from "node:url";${tailwindImport}
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+
+const rootDir = path.dirname(fileURLToPath(import.meta.url));
+
+export default defineConfig({
+  plugins: [${pluginEntries}],
+  resolve: {
+    alias: {
+      "@": path.resolve(rootDir, "src"),
+    },
+  },
+});
+`;
+
+  await writeFile(dest, content);
+
+  const staleConfigs = [
+    isTs ? 'vite.config.js' : 'vite.config.ts',
+    'vite.config.mjs',
+    'vite.config.cjs',
+  ];
+  for (const name of staleConfigs) {
+    const p = path.join(clientDir, name);
+    if (await pathExists(p)) {
+      await fs.unlink(p);
+    }
+  }
+
+  if (!isTs) {
+    const envDts = path.join(clientDir, 'src', 'vite-env.d.ts');
+    if (await pathExists(envDts)) {
+      await fs.unlink(envDts);
+    }
+  }
 }
 
 async function ensureTailwindCss(clientDir) {

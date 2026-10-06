@@ -51,6 +51,8 @@ export function resolveReactOverlayProfile(frontend = {}) {
   const httpClient = frontend.httpClient === 'fetch' ? 'fetch' : 'axios';
   const state =
     frontend.state === 'zustand' ? 'zustand' : frontend.state === 'none' ? 'none' : 'redux';
+  const forms =
+    frontend.forms === 'none' ? 'none' : 'react-hook-form-zod';
   const ext = language === 'javascript' ? 'js' : 'ts';
   const jsxExt = language === 'javascript' ? 'jsx' : 'tsx';
 
@@ -71,10 +73,24 @@ export function resolveReactOverlayProfile(frontend = {}) {
     skipPaths.push(path.join('src', 'store'));
   }
 
+  if (forms === 'none') {
+    skipPaths.push(
+      path.join('src', 'modules', 'category', 'schemas'),
+    );
+  }
+
+  if (httpClient === 'fetch') {
+    skipPaths.push(
+      path.join('src', 'lib', 'api', 'api-client.ts'),
+      path.join('src', 'shared', 'utils', 'get-error-message.ts'),
+    );
+  }
+
   return {
     language,
     httpClient,
     state,
+    forms,
     ext,
     jsxExt,
     skipPaths,
@@ -117,17 +133,14 @@ export async function overlayReactCommon(options) {
     renderGetErrorMessage(profile.httpClient, profile.language === 'javascript'),
   );
 
-  if (profile.httpClient === 'fetch') {
-    const axiosClient = path.join(options.clientDir, 'src', 'lib', 'api', 'api-client.ts');
-    if (await pathExists(axiosClient)) {
-      await fs.unlink(axiosClient);
-    }
-  }
-
   if (profile.state === 'zustand') {
     await writeZustandOverlay(options.clientDir, profile);
   } else if (profile.state === 'none') {
     await writeNoneStateOverlay(options.clientDir, profile);
+  }
+
+  if (profile.forms === 'none') {
+    await writeNoneFormsOverlay(options.clientDir, profile);
   }
 
   if (frontend.realtime === 'signalr') {
@@ -136,6 +149,150 @@ export async function overlayReactCommon(options) {
 
   if (profile.language === 'javascript') {
     await convertOverlayToJavaScript(options.clientDir);
+  }
+}
+
+async function writeNoneFormsOverlay(clientDir, profile) {
+  const isJs = profile.language === 'javascript';
+  const createPageFile = path.join(clientDir, 'src', 'modules', 'category', 'pages', `CreateCategoryPage.${profile.jsxExt}`);
+  const editPageFile = path.join(clientDir, 'src', 'modules', 'category', 'pages', `EditCategoryPage.${profile.jsxExt}`);
+
+  const createContent = `"use client";
+
+import { useState } from "react";
+import { useCategoriesController } from "../hooks/useCategoriesController";
+import { PageHeader } from "@/shared/components/common/PageHeader";
+import { ErrorState } from "@/shared/components/empty-state/ErrorState";
+
+export default function CreateCategoryPage() {
+  const { status, error, create } = useCategoriesController();
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+
+  const handleSubmit = (e${isJs ? '' : ': React.FormEvent'}) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    create({ name, description });
+  };
+
+  return (
+    <main className="ui-container ui-page" style={{ paddingTop: "2.5rem", paddingBottom: "3.5rem" }}>
+      <PageHeader
+        title="Create category"
+        description="Add a category name and optional description."
+        actions={
+          <a href="/dashboard/category" className="ui-btn ui-btn-ghost">
+            Back to list
+          </a>
+        }
+      />
+
+      {status === "failed" && error ? <ErrorState description={error} /> : null}
+
+      <form
+        className="ui-card"
+        style={{ margin: "1.2rem 0" }}
+        onSubmit={handleSubmit}
+      >
+        <label className="ui-field">
+          Name
+          <input className="ui-input" value={name} onChange={(e) => setName(e.target.value)} required />
+        </label>
+        <label className="ui-field">
+          Description
+          <textarea className="ui-input" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
+        </label>
+        <button type="submit" className="ui-btn ui-btn-primary" disabled={status === "loading"}>
+          Save category
+        </button>
+      </form>
+    </main>
+  );
+}
+`;
+
+  const editContent = `"use client";
+
+import { useEffect, useState } from "react";
+import { useCategoriesController } from "../hooks/useCategoriesController";
+import { PageHeader } from "@/shared/components/common/PageHeader";
+import { EmptyState } from "@/shared/components/empty-state/EmptyState";
+import { ErrorState } from "@/shared/components/empty-state/ErrorState";
+import { LoadingState } from "@/shared/components/loaders/LoadingState";
+
+export default function EditCategoryPage({ id }${isJs ? '' : ': { id: string }'}) {
+  const { selected, status, error, loadById, update } = useCategoriesController();
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+
+  useEffect(() => {
+    if (id) {
+      loadById(id);
+    }
+  }, [id, loadById]);
+
+  useEffect(() => {
+    if (selected) {
+      setName(selected.name);
+      setDescription(selected.description ?? "");
+    }
+  }, [selected]);
+
+  const handleSubmit = (e${isJs ? '' : ': React.FormEvent'}) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    update({ id, name, description });
+  };
+
+  return (
+    <main className="ui-container ui-page" style={{ paddingTop: "2.5rem", paddingBottom: "3.5rem" }}>
+      <PageHeader
+        title="Edit category"
+        description="Update the category name or description."
+        actions={
+          <a href="/dashboard/category" className="ui-btn ui-btn-ghost">
+            Back to list
+          </a>
+        }
+      />
+
+      {status === "failed" && error ? <ErrorState description={error} /> : null}
+      {status === "loading" && !selected ? <LoadingState description="Loading category…" /> : null}
+
+      {!selected && status !== "loading" ? (
+        <EmptyState title="Category not loaded" description="Open a category from the list to edit it." />
+      ) : (
+        <form
+          className="ui-card"
+          style={{ margin: "1.2rem 0" }}
+          onSubmit={handleSubmit}
+        >
+          <label className="ui-field">
+            Name
+            <input className="ui-input" value={name} onChange={(e) => setName(e.target.value)} required />
+          </label>
+          <label className="ui-field">
+            Description
+            <textarea className="ui-input" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
+          </label>
+          <button type="submit" className="ui-btn ui-btn-primary" disabled={status === "loading"}>
+            Save changes
+          </button>
+        </form>
+      )}
+    </main>
+  );
+}
+`;
+
+  await writeFile(createPageFile, createContent);
+  await writeFile(editPageFile, editContent);
+
+  if (isJs) {
+    const tsxCreate = path.join(clientDir, 'src', 'modules', 'category', 'pages', 'CreateCategoryPage.tsx');
+    const tsxEdit = path.join(clientDir, 'src', 'modules', 'category', 'pages', 'EditCategoryPage.tsx');
+    if (await pathExists(tsxCreate)) await fs.unlink(tsxCreate);
+    if (await pathExists(tsxEdit)) await fs.unlink(tsxEdit);
   }
 }
 
@@ -339,31 +496,8 @@ apiClient.interceptors.request.use((config) => {
 }
 
 function renderFetchApiClient(isJs) {
-  return `import { publicEnv } from "@/lib/config/env";
-
-function createHeaders(init${isJs ? '' : ': Record<string, string> | { entries(): Iterable<readonly [string, string]> } | undefined'} = {}) {
-  const map${isJs ? '' : ': Record<string, string>'} = {};
-  if (init && typeof init.entries === "function") {
-    for (const [key, value] of init.entries()) {
-      if (value != null) {
-        map[key] = String(value);
-      }
-    }
-  } else {
-    Object.assign(map, init ?? {});
-  }
-  return {
-    set(key${isJs ? '' : ': string'}, value${isJs ? '' : ': string'}) {
-      map[key] = value;
-    },
-    get(key${isJs ? '' : ': string'}) {
-      return map[key];
-    },
-    entries() {
-      return Object.entries(map);
-    },
-  };
-}
+  if (isJs) {
+    return `import { publicEnv } from "@/lib/config/env";
 
 function createInterceptor() {
   const handlers = [];
@@ -381,9 +515,7 @@ function createInterceptor() {
 
 function buildUrl(baseURL, url, params) {
   const target = url.startsWith("http") ? url : \`\${baseURL.replace(/\\/$/, "")}/\${url.replace(/^\\//, "")}\`;
-  if (!params) {
-    return target;
-  }
+  if (!params) return target;
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === null) continue;
@@ -397,28 +529,16 @@ export function createFetchClient(options) {
   const request = createInterceptor();
   const response = createInterceptor();
 
-  async function send${isJs ? '' : '<T = unknown>'}(config) {
-    let next = {
-      ...config,
-      headers: createHeaders(config.headers),
-    };
-
+  async function send(config) {
+    let next = { ...config, headers: { ...(config.headers || {}) } };
     for (const handler of request.handlers) {
-      if (!handler?.onFulfilled) continue;
-      next = await handler.onFulfilled(next);
+      if (handler?.onFulfilled) next = await handler.onFulfilled(next);
     }
 
     const url = buildUrl(options.baseURL, next.url ?? "", next.params);
     const isFormData = typeof FormData !== "undefined" && next.data instanceof FormData;
-    const headers = Object.fromEntries(next.headers.entries());
-    if (isFormData) {
-      delete headers["Content-Type"];
-      delete headers["content-type"];
-    } else if (
-      next.data !== undefined &&
-      !headers["Content-Type"] &&
-      !headers["content-type"]
-    ) {
+    const headers = { ...next.headers };
+    if (!isFormData && next.data !== undefined && !headers["Content-Type"]) {
       headers["Content-Type"] = "application/json";
     }
 
@@ -439,7 +559,7 @@ export function createFetchClient(options) {
         data = text;
       }
 
-      const httpResponse = {
+      let httpResponse = {
         data,
         status: fetched.status,
         statusText: fetched.statusText,
@@ -448,50 +568,32 @@ export function createFetchClient(options) {
       };
 
       if (!fetched.ok) {
-        const error = {
-          message: fetched.statusText,
-          response: httpResponse,
-          config: next,
-        };
+        const error = { message: fetched.statusText, response: httpResponse, config: next };
         for (const handler of response.handlers) {
-          if (!handler?.onRejected) continue;
-          return handler.onRejected(error);
+          if (handler?.onRejected) return handler.onRejected(error);
         }
         throw error;
       }
 
-      let result = httpResponse;
       for (const handler of response.handlers) {
-        if (!handler?.onFulfilled) continue;
-        result = await handler.onFulfilled(result);
+        if (handler?.onFulfilled) httpResponse = await handler.onFulfilled(httpResponse);
       }
-      return result;
+      return httpResponse;
     } catch (error) {
       for (const handler of response.handlers) {
-        if (!handler?.onRejected) continue;
-        return handler.onRejected(error);
+        if (handler?.onRejected) return handler.onRejected(error);
       }
       throw error;
     }
   }
 
-  const client = Object.assign(send, {
+  return Object.assign(send, {
     interceptors: { request, response },
-    get${isJs ? '' : ': <T = unknown>'}(url${isJs ? '' : ': string'}, config = {}) {
-      return send${isJs ? '' : '<T>'}({ ...config, method: "GET", url });
-    },
-    post${isJs ? '' : ': <T = unknown>'}(url${isJs ? '' : ': string'}, data${isJs ? '' : ': unknown'}, config = {}) {
-      return send${isJs ? '' : '<T>'}({ ...config, method: "POST", url, data });
-    },
-    put${isJs ? '' : ': <T = unknown>'}(url${isJs ? '' : ': string'}, data${isJs ? '' : ': unknown'}, config = {}) {
-      return send${isJs ? '' : '<T>'}({ ...config, method: "PUT", url, data });
-    },
-    delete${isJs ? '' : ': <T = unknown>'}(url${isJs ? '' : ': string'}, config = {}) {
-      return send${isJs ? '' : '<T>'}({ ...config, method: "DELETE", url });
-    },
+    get: (url, config = {}) => send({ ...config, method: "GET", url }),
+    post: (url, data, config = {}) => send({ ...config, method: "POST", url, data }),
+    put: (url, data, config = {}) => send({ ...config, method: "PUT", url, data }),
+    delete: (url, config = {}) => send({ ...config, method: "DELETE", url }),
   });
-
-  return client;
 }
 
 export const apiClient = createFetchClient({
@@ -506,7 +608,163 @@ apiClient.interceptors.request.use((config) => {
       ?.split("=")[1];
 
     if (locale) {
-      config.headers.set("Accept-Language", locale);
+      config.headers = config.headers || {};
+      config.headers["Accept-Language"] = locale;
+    }
+  }
+
+  return config;
+});
+`;
+  }
+
+  return `import { publicEnv } from "@/lib/config/env";
+
+type InterceptorHandler<T> = {
+  onFulfilled?: (value: T) => T | Promise<T>;
+  onRejected?: (error: any) => any;
+};
+
+function createInterceptor<T>() {
+  const handlers: (InterceptorHandler<T> | null)[] = [];
+  return {
+    use(onFulfilled?: (value: T) => T | Promise<T>, onRejected?: (error: any) => any) {
+      handlers.push({ onFulfilled, onRejected });
+      return handlers.length - 1;
+    },
+    eject(id: number) {
+      handlers[id] = null;
+    },
+    handlers,
+  };
+}
+
+function buildUrl(baseURL: string, url: string, params?: Record<string, any>) {
+  const target = url.startsWith("http") ? url : \`\${baseURL.replace(/\\/$/, "")}/\${url.replace(/^\\//, "")}\`;
+  if (!params) return target;
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null) continue;
+    search.set(key, String(value));
+  }
+  const query = search.toString();
+  return query ? \`\${target}?\${query}\` : target;
+}
+
+export type FetchClientRequestConfig = {
+  url?: string;
+  method?: string;
+  params?: Record<string, any>;
+  data?: any;
+  headers?: Record<string, string>;
+  [key: string]: any;
+};
+
+export type FetchClientResponse<T = any> = {
+  data: T;
+  status: number;
+  statusText: string;
+  config: FetchClientRequestConfig;
+  headers: Headers;
+};
+
+export function createFetchClient(options: { baseURL: string }) {
+  const request = createInterceptor<FetchClientRequestConfig>();
+  const response = createInterceptor<FetchClientResponse>();
+
+  async function send<T = any>(config: FetchClientRequestConfig): Promise<FetchClientResponse<T>> {
+    let next: FetchClientRequestConfig = { ...config, headers: { ...(config.headers || {}) } };
+    for (const handler of request.handlers) {
+      if (handler?.onFulfilled) next = await handler.onFulfilled(next);
+    }
+
+    const url = buildUrl(options.baseURL, next.url ?? "", next.params);
+    const isFormData = typeof FormData !== "undefined" && next.data instanceof FormData;
+    const headers: Record<string, string> = { ...next.headers };
+    if (!isFormData && next.data !== undefined && !headers["Content-Type"]) {
+      headers["Content-Type"] = "application/json";
+    }
+
+    const init: RequestInit = {
+      method: next.method ?? "GET",
+      credentials: "include" as RequestCredentials,
+      headers,
+      body: next.data === undefined ? undefined : isFormData ? next.data : JSON.stringify(next.data),
+    };
+
+    try {
+      const fetched = await fetch(url, init);
+      const text = await fetched.text();
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = text;
+      }
+
+      let httpResponse: FetchClientResponse<T> = {
+        data,
+        status: fetched.status,
+        statusText: fetched.statusText,
+        config: next,
+        headers: fetched.headers,
+      };
+
+      if (!fetched.ok) {
+        const error = { message: fetched.statusText, response: httpResponse, config: next };
+        for (const handler of response.handlers) {
+          if (handler?.onRejected) return handler.onRejected(error);
+        }
+        throw error;
+      }
+
+      for (const handler of response.handlers) {
+        if (handler?.onFulfilled) httpResponse = (await handler.onFulfilled(httpResponse)) as FetchClientResponse<T>;
+      }
+      return httpResponse;
+    } catch (error) {
+      for (const handler of response.handlers) {
+        if (handler?.onRejected) return handler.onRejected(error);
+      }
+      throw error;
+    }
+  }
+
+  return Object.assign(send, {
+    interceptors: { request, response },
+    get<T = any>(url: string, config: FetchClientRequestConfig = {}) {
+      return send<T>({ ...config, method: "GET", url });
+    },
+    post<T = any>(url: string, data?: any, config: FetchClientRequestConfig = {}) {
+      return send<T>({ ...config, method: "POST", url, data });
+    },
+    put<T = any>(url: string, data?: any, config: FetchClientRequestConfig = {}) {
+      return send<T>({ ...config, method: "PUT", url, data });
+    },
+    delete<T = any>(url: string, config: FetchClientRequestConfig = {}) {
+      return send<T>({ ...config, method: "DELETE", url });
+    },
+  });
+}
+
+export const apiClient = createFetchClient({
+  baseURL: publicEnv.apiUrl,
+});
+
+apiClient.interceptors.request.use((config) => {
+  if (typeof document !== "undefined") {
+    const locale = document.cookie
+      .split("; ")
+      .find((row) => row.startsWith("locale="))
+      ?.split("=")[1];
+
+    if (locale) {
+      if (typeof Headers !== "undefined" && config.headers instanceof Headers) {
+        config.headers.set("Accept-Language", locale);
+      } else {
+        config.headers = config.headers || {};
+        config.headers["Accept-Language"] = locale;
+      }
     }
   }
 
@@ -517,7 +775,8 @@ apiClient.interceptors.request.use((config) => {
 
 function renderGetErrorMessage(httpClient, isJs) {
   if (httpClient === 'fetch') {
-    return `export function getErrorMessage(error${isJs ? '' : ': unknown'})${isJs ? '' : ': string'} {
+    if (isJs) {
+      return `export function getErrorMessage(error) {
   if (error && typeof error === "object" && "response" in error) {
     const data = error.response?.data;
 
@@ -537,6 +796,42 @@ function renderGetErrorMessage(httpClient, isJs) {
 
     if ("message" in error && typeof error.message === "string") {
       return error.message;
+    }
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  if (typeof error === "string" && error.length > 0) {
+    return error;
+  }
+
+  return "Unexpected error";
+}
+`;
+    }
+
+    return `export function getErrorMessage(error: unknown): string {
+  if (error && typeof error === "object" && "response" in error) {
+    const data = (error as { response?: { data?: unknown }; message?: string }).response?.data;
+
+    if (typeof data === "string" && data.length > 0) {
+      return data;
+    }
+
+    if (
+      data &&
+      typeof data === "object" &&
+      "title" in data &&
+      typeof (data as { title?: unknown }).title === "string" &&
+      (data as { title: string }).title.length > 0
+    ) {
+      return (data as { title: string }).title;
+    }
+
+    if ("message" in error && typeof (error as { message?: unknown }).message === "string") {
+      return (error as { message: string }).message;
     }
   }
 
@@ -726,8 +1021,19 @@ export function useCategoriesController() {
 `;
 }
 
+async function writeProfileFile(filePath, contents) {
+  await writeFile(filePath, contents);
+  if (filePath.endsWith('.js')) {
+    const ts = filePath.slice(0, -3) + '.ts';
+    if (await pathExists(ts)) await fs.unlink(ts);
+  } else if (filePath.endsWith('.jsx')) {
+    const tsx = filePath.slice(0, -4) + '.tsx';
+    if (await pathExists(tsx)) await fs.unlink(tsx);
+  }
+}
+
 async function writeNoneStateOverlay(clientDir, profile) {
-  await writeFile(
+  await writeProfileFile(
     path.join(clientDir, 'src', 'modules', 'category', 'hooks', `useCategoriesController.${profile.ext}`),
     `"use client";
 
@@ -784,7 +1090,7 @@ export function useCategoriesController() {
 `,
   );
 
-  await writeFile(
+  await writeProfileFile(
     path.join(clientDir, 'src', 'modules', 'category', `index.${profile.ext}`),
     `export { default as CategoriesPage } from "./pages/CategoriesPage";
 export { default as CreateCategoryPage } from "./pages/CreateCategoryPage";

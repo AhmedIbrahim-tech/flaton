@@ -147,8 +147,10 @@ export function deriveFeatureNames(singularInput, pluralOverride) {
     singularName,
     pluralName,
     camelName: toCamelCase(singularName),
+    camelPlural: toCamelCase(pluralName),
     camelPluralName: toCamelCase(pluralName),
     kebabName: toKebabCase(singularName),
+    kebabPlural: toKebabCase(pluralName),
     kebabPluralName: toKebabCase(pluralName),
     route: toKebabCase(pluralName),
   };

@@ -111,7 +111,7 @@ export async function planFrontendFeature(config) {
  */
 export function frontendConflictPaths(config) {
   const strategy = config.frontendStrategy ?? {};
-  const { kebabPlural } = config.feature;
+  const kebabPlural = config.feature?.kebabPlural ?? config.feature?.kebabPluralName;
 
   if (strategy.library === 'react') {
     return [getFrontendFilePath(config, 'src', 'modules', kebabPlural)];

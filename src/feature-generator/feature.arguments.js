@@ -259,8 +259,10 @@ export function printFeatureHelp() {
 ${pkg.name} feature generator v${FEATURE_GENERATOR_VERSION}
 
 Usage:
-  create-fullstack-feature [FeatureName] [options]
-  node ./bin/create-fullstack-feature.js [FeatureName] [options]
+  flatron create feature <name> [options]
+  create-fullstack-feature <name> [options]
+
+Running without field definitions starts the interactive Feature Builder.
 
 Options:
   -h, --help                 Show help
@@ -269,38 +271,34 @@ Options:
   --dry-run                  Print the generation plan without writing files
   --migration                Generate an EF migration after feature creation
   --force                    Overwrite existing feature files (use with care)
-  -y, --yes                  Skip confirmation prompts when flags provide enough data
-
+  -y, --yes                  Skip confirmation prompts
   --plural <name>            Override plural name
   --fullstack                Generate backend + frontend (default)
   --backend-only             Generate backend only
   --frontend-only            Generate frontend only
-  --surface dashboard|public|both
-  --type crud|readonly
+  --surface <surface>        dashboard | public | both
+  --type <type>              crud | readonly
+  --field <definition>       Add a field (can be repeated)
+  --add-relationship <def>   Add a relationship field (shorthand)
+  --permissions              Register feature permissions when permissions module is enabled
+  --localize                 Generate domain translation scaffolding when localization module is enabled
 
-  --field / --add-field <definition>   Add a field (see syntax below)
-  --add-relationship <definition>      Add a relationship field (shorthand)
-
-  --no-search --no-pagination --no-create --no-update --no-delete --no-restore
-  --permissions / --no-permissions   Register feature permissions when permissions module is enabled
-  --localize                         Generate domain translation scaffolding when localization module is enabled
-
-Field syntax (V3/V4):
+Field syntax:
   Scalar:
     "Name:string:required:max=200"
-    "Price:decimal:required:min=0:precision=18:scale=2"
+    "Price:decimal:required:min=0"
     "IsActive:boolean:required"
-  Rich text (V4 — structured JSON document):
-    "Content:richText:required"
   Enum:
     "Status:enum:name=ProductStatus:values=Draft|Active|Archived:required"
   Relationship:
-    "Category:relationship:target=Category:type=many-to-one:required:display=Name:delete=restrict"
+    "Category:relationship:target=Category:type=many-to-one:required:display=Name"
     "Tags:relationship:target=Tag:type=many-to-many:display=Name"
   File / Image:
     "CoverImage:image:single:max-size=5242880"
     "Gallery:image:multiple:max-files=8"
     "Attachment:file:single:max-size=10485760"
+  Rich text:
+    "Content:richText:required"
 
 Relationship types: many-to-one, one-to-many, many-to-many, one-to-one
 Delete behaviors:   restrict (default), cascade, set-null, no-action
@@ -308,14 +306,14 @@ Delete behaviors:   restrict (default), cascade, set-null, no-action
 Supported scalar types: ${FIELD_TYPES.join(', ')}
 
 Examples:
-  create-fullstack-feature Product
-  create-fullstack-feature Product --yes --fullstack --surface dashboard \\
+  flatron create feature Product
+  flatron create feature Product --yes --fullstack --surface dashboard \\
     --field "Name:string:required:max=200" \\
     --field "Price:decimal:required:min=0" \\
     --field "Status:enum:name=ProductStatus:values=Draft|Active|Archived:required" \\
-    --add-relationship "Category:target=Category:type=many-to-one:required:display=Name" \\
-    --field "CoverImage:image:single:max-size=5242880"
-  create-fullstack-feature Category --dry-run
+    --add-relationship "Category:target=Category:type=many-to-one:required:display=Name"
+  flatron create feature Category --dry-run
+  create-fullstack-feature Product
 `.trim();
 
   process.stdout.write(`${text}\n`);

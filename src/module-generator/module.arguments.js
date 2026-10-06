@@ -81,8 +81,11 @@ export function parseModuleArguments(argv) {
     }
     const normalized = normalizeModuleId(arg);
     if (!normalized) {
+      const moduleList = listModuleIds()
+        .map((id) => `  ${id.padEnd(16)} ${MODULES[id].description}`)
+        .join('\n');
       throw new Error(
-        `Unknown module "${arg}". Available: ${listModuleIds().join(', ')}`,
+        `Unknown module: ${arg}\n\nAvailable modules:\n${moduleList}\n\nTo generate a business feature (such as Product, Category, or Order), run:\n  flatron create feature ${arg}`,
       );
     }
     options.moduleName = normalized;
@@ -114,10 +117,11 @@ export function printModuleHelp() {
 ${pkg.name} module generator v${MODULE_GENERATOR_VERSION}
 
 Usage:
-  create-fullstack-module <module> [options]
-  node ./bin/create-fullstack-module.js <module> [options]
+  flatron create module
+  flatron create module <name> [options]
+  create-fullstack-module <name> [options]
 
-Modules:
+Available modules:
 ${lines}
 
 Options:
@@ -130,12 +134,15 @@ Options:
   --force                 Reinstall generator-owned module files
   -y, --yes               Skip confirmation prompts
   --default-role <name>   Default registration role (auth)
-  --roles Admin|Editor|User
+  --roles <roles>         Seed roles separated by pipe (Admin|Editor|User)
 
 Examples:
-  create-fullstack-module auth --yes
-  create-fullstack-module notifications --dry-run
-  create-fullstack-module --status
+  flatron create module
+  flatron create module auth
+  flatron create module users --yes
+  flatron create module --list
+  flatron create module --status
+  create-fullstack-module auth --migration
 `.trim();
 
   process.stdout.write(`${text}\n`);

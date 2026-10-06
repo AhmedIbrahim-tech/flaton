@@ -26,10 +26,25 @@ export function convertTypeScriptToJavaScript(source) {
   out = out.replace(/<[A-Za-z0-9_.,\s[\]|&]+>\s*`/g, '`');
 
   out = out.replace(/:\s*Readonly<\{[\s\S]*?\}>/g, '');
+  out = out.replace(/:\s*React\.[A-Za-z0-9_]+(<[^>]+>)?\s*=/g, ' =');
+  out = out.replace(/:\s*ReactElement\s*=/g, ' =');
+  
+  // Destructured parameter type annotations with inline object types: ({ a, b }: { a: string }) =>
+  out = out.replace(/(\}\s*):\s*\{[\s\S]*?\}\s*([=,)])/g, '$1$2');
+  // Simple destructured parameter type annotations: ({ a, b }: Props) =>
+  out = out.replace(/(\}\s*):\s*[A-Za-z0-9_.<>,[\] |&?]+(\s*[=,)])/g, '$1$2');
+  // Parameter with inline object type: (options: { a: string }) =>
+  out = out.replace(/(\(|,)\s*([A-Za-z0-9_]+\??)\s*:\s*\{[\s\S]*?\}\s*([=,)])/g, '$1 $2$3');
+  // Simple parameter type annotations: (a: string, b: number) =>
+  out = out.replace(/(\(|,)\s*([A-Za-z0-9_]+\??)\s*:\s*[A-Za-z0-9_.<>,[\] |&?]+(\s*[=,)])/g, '$1 $2$3');
+  
+  // Return type annotations
   out = out.replace(/\):\s*[A-Za-z0-9_.<>,[\] |&]+(\s*\{)/g, ')$1');
   out = out.replace(/\):\s*[A-Za-z0-9_.<>,[\] |&]+(\s*=>)/g, ')$1');
-  out = out.replace(/(\(|,)\s*([A-Za-z0-9_]+)\s*:\s*[A-Za-z0-9_.<>,[\] |&?]+(\s*[=,)])/g, '$1 $2$3');
-  out = out.replace(/(\b[A-Za-z0-9_]+)\s*:\s*[A-Za-z0-9_.<>,[\] |&?]+(\s*[=,;)\n])/g, '$1$2');
+
+  // Variable type annotations
+  out = out.replace(/\b(const|let|var)\s+([A-Za-z0-9_]+)\s*:\s*[A-Za-z0-9_.<>,[\] |&?]+(\s*=[^=])/g, '$1 $2$3');
+  out = out.replace(/\b(const|let|var)\s+([A-Za-z0-9_]+)\s*:\s*[A-Za-z0-9_.<>,[\] |&?]+(\s*;)/g, '$1 $2$3');
 
   out = out.replace(/export function (\w+)\s*<[^>]+>\s*\(/g, 'export function $1(');
   out = out.replace(/function (\w+)\s*<[^>]+>\s*\(/g, 'function $1(');
@@ -42,7 +57,7 @@ export function convertTypeScriptToJavaScript(source) {
  */
 function stripExportTypeOrInterface(source) {
   let out = source;
-  const pattern = /^export (type|interface) /gm;
+  const pattern = /^(export\s+)?(type|interface)\s+/gm;
   let match = pattern.exec(out);
   while (match) {
     const start = match.index;

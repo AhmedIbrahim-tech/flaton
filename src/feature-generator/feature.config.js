@@ -107,7 +107,10 @@ export function buildFeatureConfig(input) {
     manifest,
   });
   const permissions = resolvePermissionsEnabled({
-    permissions: input.permissions,
+    permissions:
+      input.generatePermissions !== undefined
+        ? input.generatePermissions
+        : input.permissions,
     manifest,
   });
   const backendEnabled = resolveBackendEnabled({

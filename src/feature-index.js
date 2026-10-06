@@ -17,9 +17,9 @@ import { GenerationError } from './utils/errors.js';
 import { logger } from './utils/logger.js';
 import { handleCliCancellation } from './utils/cli-cancellation.js';
 
-async function main() {
+export async function runFeatureCli(argv = process.argv) {
   try {
-    const parsed = parseFeatureArguments(process.argv);
+    const parsed = parseFeatureArguments(argv);
 
     if (parsed.help) {
       printFeatureHelp();
@@ -36,27 +36,45 @@ async function main() {
       return;
     }
 
+    if (parsed.yes && !parsed.featureName) {
+      logger.error(
+        'Please specify a feature name when using --yes (e.g. flatron create feature Product --yes).',
+      );
+      process.exitCode = 1;
+      return;
+    }
+
     const projectRoot = await findProjectRoot(process.cwd());
     if (!projectRoot) {
-      throw new Error('This directory is not a Flatron project.');
+      throw new Error(
+        'This directory is not a Flatron project. Navigate to a Flatron project first.',
+      );
     }
 
     const manifest = await readManifest(projectRoot);
     const strategy = resolveFrontendStrategy(manifest);
     const modules = manifest.modules ?? {};
     const project = {
-      hasBackend: manifest.backend?.enabled === true,
-      hasFrontend: manifest.frontend?.enabled === true && Boolean(strategy.library),
+      projectRoot,
+      hasBackend: manifest.backend?.enabled !== false && manifest.mode !== 'frontend-only',
+      hasFrontend: manifest.frontend?.enabled !== false && manifest.mode !== 'backend-only' && Boolean(strategy.library),
+      architecture: manifest.backend?.architecture === 'services' ? 'Services' : 'CQRS + MediatR',
+      orm: manifest.backend?.orm === 'dapper' ? 'Dapper' : manifest.backend?.orm === 'hybrid' ? 'Hybrid (EF Core + Dapper)' : 'EF Core',
+      database: manifest.backend?.database ?? 'sqlserver',
+      presentation: manifest.backend?.presentation ?? 'controllers',
+      frontendStrategy: strategy,
       modules: {
         permissions: Boolean(modules.permissions?.enabled),
         localization: Boolean(modules.localization?.enabled),
-        richText: Boolean(modules.richText?.enabled),
+        richText: Boolean(modules.richText?.enabled || modules['rich-text']?.enabled),
         audit: Boolean(modules.audit?.enabled),
       },
       existingFeatures: Object.entries(manifest.features ?? {}).map(
         ([key, value]) => ({
           key,
           entity: value.entity,
+          singularName: value.entity,
+          name: value.entity,
           plural: value.plural,
           fields: value.fields ?? [],
         }),
@@ -67,6 +85,7 @@ async function main() {
       parsed,
       project,
       project.existingFeatures,
+      projectRoot,
     );
     if (!resolved) {
       logger.info('Feature generation cancelled.');
@@ -96,4 +115,12 @@ async function main() {
   }
 }
 
-await main();
+const isInvokedDirectly =
+  process.argv[1] &&
+  (process.argv[1].endsWith('create-fullstack-feature.js') ||
+    process.argv[1].endsWith('feature-index.js'));
+
+if (isInvokedDirectly) {
+  await runFeatureCli();
+}
+

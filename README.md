@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/flatron"><img src="https://img.shields.io/npm/v/flatron.svg?style=flat&color=7c3aed" alt="npm version" /></a>
-  <a href="https://github.com/AhmedIbrahim-tech/create-fullstack-app/stargazers"><img src="https://img.shields.io/github/stars/AhmedIbrahim-tech/create-fullstack-app?style=flat&color=7c3aed" alt="GitHub stars" /></a>
+  <a href="https://github.com/AhmedIbrahim-tech/flatron/stargazers"><img src="https://img.shields.io/github/stars/AhmedIbrahim-tech/flatron?style=flat&color=7c3aed" alt="GitHub stars" /></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E%3D20-7c3aed.svg?style=flat" alt="node version" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-7c3aed.svg?style=flat" alt="license" /></a>
 </p>
@@ -55,14 +55,14 @@ flatron MyApp
 
 ## CLI Usage
 
-Run the generator with custom options or skip prompts entirely:
+### Project Scaffolding
 
 ```bash
 # Interactive mode
-npx flatron my-app
+npx flatron MyApp
 
 # Non-interactive with recommended defaults
-npx flatron my-app --yes
+npx flatron MyApp --yes
 
 # Backend-only API with PostgreSQL and JWT auth
 npx flatron my-api --type backend --db postgresql --auth jwt --yes
@@ -70,6 +70,21 @@ npx flatron my-api --type backend --db postgresql --auth jwt --yes
 # Frontend-only app with React, Vite, and Tailwind
 npx flatron my-ui --type frontend --frontend react --frontend-tooling vite --styling tailwind --yes
 ```
+
+### Feature & Module Generation
+
+Inside a Flatron project:
+
+```bash
+# Generate a business entity feature (interactive wizard)
+flatron create feature Product
+
+# Install an application module
+flatron create module
+flatron create module auth
+```
+
+*(Legacy `create-fullstack-feature` and `create-fullstack-module` remain supported for backward compatibility.)*
 
 To see all available flags and options:
 

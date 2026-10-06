@@ -373,3 +373,85 @@ function parseNumberStrict(value, label) {
 
   return Number(value);
 }
+
+/**
+ * Format a normalized field back into its canonical --field string representation.
+ * @param {object} field
+ * @returns {string}
+ */
+export function formatFieldFlag(field) {
+  if (!field || typeof field !== 'object') {
+    return '';
+  }
+
+  const req = field.required ? 'required' : 'optional';
+
+  if (field.kind === 'enum') {
+    const values = Array.isArray(field.enumValues) ? field.enumValues.join('|') : '';
+    return `${field.name}:enum:name=${field.enumName ?? field.name}:values=${values}:${req}`;
+  }
+
+  if (field.kind === 'relationship') {
+    const parts = [
+      field.name,
+      'relationship',
+      `target=${field.target}`,
+      `type=${field.relationshipType}`,
+    ];
+    if (field.required && field.relationshipType !== 'many-to-many' && field.relationshipType !== 'one-to-many') {
+      parts.push('required');
+    }
+    if (field.display && field.display !== 'Name') {
+      parts.push(`display=${field.display}`);
+    } else {
+      parts.push('display=Name');
+    }
+    if (field.deleteBehavior) {
+      parts.push(`delete=${field.deleteBehavior.toLowerCase()}`);
+    }
+    return parts.join(':');
+  }
+
+  if (field.kind === 'file' || field.kind === 'image') {
+    const parts = [
+      field.name,
+      field.kind,
+      field.cardinality ?? 'single',
+      req,
+    ];
+    if (field.maxSize != null) parts.push(`max-size=${field.maxSize}`);
+    if (field.maxFiles != null) parts.push(`max-files=${field.maxFiles}`);
+    return parts.join(':');
+  }
+
+  if (field.richText || field.type === 'richText' || field.type === 'richtext') {
+    return `${field.name}:richText:${req}`;
+  }
+
+  // Scalar fields
+  if (field.type === 'string') {
+    const parts = [field.name, 'string', req];
+    if (field.maxLength != null) parts.push(`max=${field.maxLength}`);
+    if (field.minLength != null) parts.push(`min=${field.minLength}`);
+    return parts.join(':');
+  }
+
+  if (field.type === 'decimal') {
+    const parts = [field.name, 'decimal', req];
+    if (field.precision != null && field.precision !== 18) parts.push(`precision=${field.precision}`);
+    if (field.scale != null && field.scale !== 2) parts.push(`scale=${field.scale}`);
+    if (field.minimum != null) parts.push(`min=${field.minimum}`);
+    if (field.maximum != null) parts.push(`max=${field.maximum}`);
+    return parts.join(':');
+  }
+
+  if (field.type === 'int' || field.type === 'long' || field.type === 'double') {
+    const parts = [field.name, field.type, req];
+    if (field.minimum != null) parts.push(`min=${field.minimum}`);
+    if (field.maximum != null) parts.push(`max=${field.maximum}`);
+    return parts.join(':');
+  }
+
+  return `${field.name}:${field.type}:${req}`;
+}
+
