@@ -113,7 +113,10 @@ export async function resolveOptions(parsed) {
       frontend = frontendEnabled ? targetFrontend : { enabled: false };
     }
   } else if (preferencesAction === 'use-saved' && savedPreferences && !hasFlags) {
-    const savedPresentation = mode === 'fullstack' ? 'controllers' : (savedPreferences.backend?.presentation ?? 'controllers');
+    const savedPres = savedPreferences.backend?.presentation;
+    const savedPresentation = mode === 'fullstack'
+      ? (savedPres === 'minimal-api' ? 'minimal-api' : 'controllers')
+      : (savedPres ?? 'controllers');
     const { dotnet: _ignoredDotnet, dotnetVersion: _ignoredDotnetVersion, ...cleanBackendPrefs } = savedPreferences.backend ?? {};
     backend = backendEnabled
       ? { ...defaultBackendSelection(), ...cleanBackendPrefs, presentation: savedPresentation }
@@ -329,18 +332,28 @@ async function resolveCustomBackend(parsed, mode = 'backend-only', savedPreferen
     };
   }
 
-  const presentation = mode === 'fullstack'
-    ? 'controllers'
-    : (norm.presentation ?? (await select({
-        message: 'Backend Type:',
-        choices: [
-          { name: 'Web API (Controllers)', value: 'controllers' },
-          { name: 'Minimal API', value: 'minimal-api' },
-          { name: 'MVC', value: 'mvc' },
-          { name: 'Razor Pages', value: 'razor-pages' },
-        ],
-        default: savedPreferences?.backend?.presentation ?? 'controllers',
-      })));
+  const explicitPresentation = parsed.backendType ?? parsed.presentation;
+  const presentationChoices = mode === 'fullstack'
+    ? [
+        { name: 'Web API (Controllers)', value: 'controllers' },
+        { name: 'Minimal API', value: 'minimal-api' },
+      ]
+    : [
+        { name: 'Web API (Controllers)', value: 'controllers' },
+        { name: 'Minimal API', value: 'minimal-api' },
+        { name: 'MVC', value: 'mvc' },
+        { name: 'Razor Pages', value: 'razor-pages' },
+      ];
+
+  const defaultPresentation = mode === 'fullstack'
+    ? (savedPreferences?.backend?.presentation === 'minimal-api' ? 'minimal-api' : 'controllers')
+    : (savedPreferences?.backend?.presentation ?? 'controllers');
+
+  const presentation = explicitPresentation ?? (await select({
+    message: 'Backend Type:',
+    choices: presentationChoices,
+    default: defaultPresentation,
+  }));
 
   const architecture = norm.architecture ?? (await select({
     message: 'Application Architecture:',

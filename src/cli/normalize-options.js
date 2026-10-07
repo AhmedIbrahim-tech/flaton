@@ -8,9 +8,10 @@
  * @param {string} mode
  */
 export function normalizeBackendOptions(raw, mode) {
-  const presentation = mode === 'fullstack'
-    ? 'controllers'
-    : (raw.backendType ?? raw.presentation);
+  let presentation = raw.backendType ?? raw.presentation;
+  if (mode === 'fullstack') {
+    presentation = presentation ?? 'controllers';
+  }
 
   let architecture = raw.architecture;
   if (architecture === 'cqrs') architecture = 'cqrs-mediatr';

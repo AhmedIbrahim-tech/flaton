@@ -66,9 +66,9 @@ export function validateCompatibility(config) {
 
   if (mode === 'fullstack' && backend?.enabled) {
     const pres = backend.presentation;
-    if (pres && pres !== 'controllers') {
+    if (pres && pres !== 'controllers' && pres !== 'minimal-api') {
       throw new Error(
-        `Full Stack mode only supports Web API (Controllers). Cannot use with backend type "${pres}".`,
+        `Full Stack mode only supports Web API (Controllers or Minimal API). Cannot use with backend type "${pres}".`,
       );
     }
   }

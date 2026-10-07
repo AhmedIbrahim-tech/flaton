@@ -19,6 +19,8 @@ import {
   authBackendConflictPaths,
 } from '../src/module-generator/auth/auth-backend.generator.js';
 import { setModuleManifestContext } from '../src/module-generator/modules-orchestrator-helpers.js';
+import { validateCompatibility } from '../src/cli/validate-options.js';
+import { normalizeBackendOptions } from '../src/cli/normalize-options.js';
 
 function makeProductConfig(presentation, architecture) {
   const isWeb = presentation === 'mvc' || presentation === 'razor-pages';
@@ -405,4 +407,150 @@ test('Auth backend planning: Cookies mode emits no JWT services; Minimal API map
   assert.ok(razorPaths.some((p) => p.includes('Web/Pages/Account/Login.cshtml.cs')));
   assert.ok(!razorPaths.some((p) => p.includes('Web/Controllers')));
   assert.ok(!razorPaths.some((p) => p.includes('API/')));
+});
+
+test('Full Stack presentation validation rules: supports Controllers and Minimal API, rejects MVC and Razor Pages', () => {
+  // Full Stack + Controllers -> valid
+  assert.doesNotThrow(() => {
+    validateCompatibility({
+      mode: 'fullstack',
+      backend: { enabled: true, presentation: 'controllers', orm: 'efcore', authentication: 'identity-jwt' },
+      frontend: { enabled: true, library: 'react', framework: 'next' },
+    });
+  });
+
+  // Full Stack + Minimal API -> valid
+  assert.doesNotThrow(() => {
+    validateCompatibility({
+      mode: 'fullstack',
+      backend: { enabled: true, presentation: 'minimal-api', orm: 'efcore', authentication: 'identity-jwt' },
+      frontend: { enabled: true, library: 'react', framework: 'vite' },
+    });
+  });
+
+  // Full Stack + MVC -> invalid
+  assert.throws(
+    () => {
+      validateCompatibility({
+        mode: 'fullstack',
+        backend: { enabled: true, presentation: 'mvc', orm: 'efcore', authentication: 'identity' },
+        frontend: { enabled: true, library: 'react', framework: 'next' },
+      });
+    },
+    /Full Stack mode only supports Web API \(Controllers or Minimal API\)/,
+  );
+
+  // Full Stack + Razor Pages -> invalid
+  assert.throws(
+    () => {
+      validateCompatibility({
+        mode: 'fullstack',
+        backend: { enabled: true, presentation: 'razor-pages', orm: 'efcore', authentication: 'identity' },
+        frontend: { enabled: true, library: 'angular' },
+      });
+    },
+    /Full Stack mode only supports Web API \(Controllers or Minimal API\)/,
+  );
+
+  // Backend Only + all four presentations -> valid
+  assert.doesNotThrow(() => {
+    validateCompatibility({
+      mode: 'backend-only',
+      backend: { enabled: true, presentation: 'controllers', orm: 'efcore', authentication: 'identity-jwt' },
+      frontend: { enabled: false },
+    });
+  });
+  assert.doesNotThrow(() => {
+    validateCompatibility({
+      mode: 'backend-only',
+      backend: { enabled: true, presentation: 'minimal-api', orm: 'efcore', authentication: 'identity-jwt' },
+      frontend: { enabled: false },
+    });
+  });
+  assert.doesNotThrow(() => {
+    validateCompatibility({
+      mode: 'backend-only',
+      backend: { enabled: true, presentation: 'mvc', orm: 'efcore', authentication: 'identity' },
+      frontend: { enabled: false },
+    });
+  });
+  assert.doesNotThrow(() => {
+    validateCompatibility({
+      mode: 'backend-only',
+      backend: { enabled: true, presentation: 'razor-pages', orm: 'efcore', authentication: 'identity' },
+      frontend: { enabled: false },
+    });
+  });
+});
+
+test('Full Stack normalization: preserves minimal-api and controllers, defaults omitted to controllers', () => {
+  // Explicit minimal-api in Full Stack
+  const normMinimal = normalizeBackendOptions({ backendType: 'minimal-api' }, 'fullstack');
+  assert.equal(normMinimal.presentation, 'minimal-api');
+
+  // Explicit controllers in Full Stack
+  const normControllers = normalizeBackendOptions({ backendType: 'controllers' }, 'fullstack');
+  assert.equal(normControllers.presentation, 'controllers');
+
+  // Omitted presentation in Full Stack defaults to controllers
+  const normDefault = normalizeBackendOptions({}, 'fullstack');
+  assert.equal(normDefault.presentation, 'controllers');
+
+  // Explicit minimal-api in backend-only
+  const normBackendMinimal = normalizeBackendOptions({ backendType: 'minimal-api' }, 'backend-only');
+  assert.equal(normBackendMinimal.presentation, 'minimal-api');
+
+  // Explicit mvc in backend-only
+  const normBackendMvc = normalizeBackendOptions({ backendType: 'mvc' }, 'backend-only');
+  assert.equal(normBackendMvc.presentation, 'mvc');
+});
+
+test('Full Stack + Minimal API: manifest output and feature planning for React and Angular', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fs-minimal-'));
+
+  // React + Minimal API manifest
+  await writeGenerationManifest({
+    targetDirectory: tempDir,
+    pascalName: 'ReactMinimalApp',
+    backend: { enabled: true, architecture: 'cqrs-mediatr', presentation: 'minimal-api' },
+    frontend: { enabled: true, library: 'react', framework: 'vite' },
+    presentation: 'minimal-api',
+    modules: {},
+  });
+  let manifest = JSON.parse(fs.readFileSync(path.join(tempDir, '.fullstack-app.json'), 'utf8'));
+  assert.equal(manifest.backend.presentation, 'minimal-api');
+  assert.equal(manifest.frontend.library, 'react');
+
+  // Angular + Minimal API manifest
+  await writeGenerationManifest({
+    targetDirectory: tempDir,
+    pascalName: 'AngularMinimalApp',
+    backend: { enabled: true, architecture: 'services', presentation: 'minimal-api' },
+    frontend: { enabled: true, library: 'angular' },
+    presentation: 'minimal-api',
+    modules: {},
+  });
+  manifest = JSON.parse(fs.readFileSync(path.join(tempDir, '.fullstack-app.json'), 'utf8'));
+  assert.equal(manifest.backend.presentation, 'minimal-api');
+  assert.equal(manifest.frontend.library, 'angular');
+
+  fs.rmSync(tempDir, { recursive: true, force: true });
+
+  // Feature planning for Full Stack + Minimal API
+  const reactConfig = buildFeatureConfig({
+    singularName: 'Customer',
+    fields: [{ name: 'Name', type: 'string' }],
+    manifest: {
+      backend: { enabled: true, presentation: 'minimal-api', architecture: 'cqrs-mediatr', orm: 'efcore' },
+      frontend: { enabled: true, library: 'react', framework: 'vite' },
+      paths: { backend: 'Backend', frontend: 'Frontend' },
+    },
+    projectRoot: '/test',
+    projectName: 'ReactMinimalApp',
+  });
+  assert.equal(reactConfig.presentation, 'minimal-api');
+  const plannedBackend = planBackendFeature(reactConfig);
+  const plannedPaths = plannedBackend.map((f) => f.relativePath.replace(/\\/g, '/'));
+  assert.ok(plannedPaths.some((p) => p.includes('API/Endpoints/Customers/CustomerEndpoints.cs')));
+  assert.ok(!plannedPaths.some((p) => p.includes('API/Controllers')));
 });
